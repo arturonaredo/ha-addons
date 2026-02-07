@@ -104,6 +104,22 @@ options:
     enabled: true
     safety_margin_percent: 10
     check_interval_seconds: 30
+  
+  # ─────────────────────────────────────────────────────────────────────
+  # BATTERY OPTIMIZATION
+  # ─────────────────────────────────────────────────────────────────────
+  battery_optimization:
+    enabled: true
+    # SOC mínimo de seguridad (nunca bajar de esto)
+    min_soc: 10
+    # SOC objetivo por defecto cuando no hay override
+    default_target_soc: 80
+    # Cargar siempre que el precio esté por debajo de este valor
+    always_charge_below_price: 0.05
+    # No cargar si el precio está por encima de este valor
+    never_charge_above_price: 0.15
+    # Mantener batería llena los fines de semana
+    keep_full_weekends: true
 
 schema:
   inverter:
@@ -168,6 +184,14 @@ schema:
     enabled: bool
     safety_margin_percent: int(0,50)
     check_interval_seconds: int(5,300)
+  
+  battery_optimization:
+    enabled: bool
+    min_soc: int(0,50)
+    default_target_soc: int(50,100)
+    always_charge_below_price: float(0,0.5)
+    never_charge_above_price: float(0,0.5)
+    keep_full_weekends: bool
 
 map:
   - config:rw

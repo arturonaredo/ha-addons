@@ -1,6 +1,6 @@
 name: "Volt Load Manager"
-description: "Gestión inteligente de cargas y batería para inversores Deye. Control de carga por precio PVPC, predicción solar, y load shedding por prioridades."
-version: "1.0.1"
+description: "Gestión inteligente de cargas y batería para inversores Deye. Control por periodos tarifarios (punta/llano/valle), carga en horas baratas, y load shedding por prioridades."
+version: "1.1.0"
 slug: "volt_load_manager"
 url: "https://github.com/arturonaredo/ha-addons"
 arch:
@@ -15,71 +15,138 @@ panel_icon: "mdi:flash"
 panel_title: "Volt Load Manager"
 
 options:
-  # Inverter config
-  inverter_max_power: 6000
-  battery_capacity_kwh: 32.6
-  battery_min_soc: 10
-  battery_max_soc: 100
+  # ─────────────────────────────────────────────────────────────────────
+  # INVERSOR
+  # ─────────────────────────────────────────────────────────────────────
+  inverter:
+    max_power: 6000
+    battery_capacity_kwh: 32.6
+    battery_min_soc: 10
+    battery_max_soc: 100
   
-  # HA entities - Deye/Solarman
-  entities:
-    battery_soc: "sensor.inverter_battery_soc"
+  # ─────────────────────────────────────────────────────────────────────
+  # SENSORES (Deye/Solarman)
+  # ─────────────────────────────────────────────────────────────────────
+  sensors:
+    battery_soc: "sensor.predbat_battery_soc_2"
     battery_power: "sensor.inverter_battery_power"
+    battery_capacity: "sensor.inverter_battery_capacity"
     grid_power: "sensor.inverter_grid_power"
     load_power: "sensor.inverter_load_power"
     pv_power: "sensor.inverter_pv_power"
+    pvpc_price: "sensor.esios_pvpc_octopus3"
+    tariff_period: "sensor.predbat_periodo_potencia"
+  
+  # ─────────────────────────────────────────────────────────────────────
+  # CONTROLES (Deye/Solarman)
+  # ─────────────────────────────────────────────────────────────────────
+  controls:
     work_mode: "select.inverter_work_mode"
+    grid_charge_start_soc: "number.inverter_battery_grid_charging_start"
+    program_1_soc: "number.inverter_program_1_soc"
+    program_1_time: "time.inverter_program_1_time"
+    program_2_soc: "number.inverter_program_2_soc"
+    program_2_time: "time.inverter_program_2_time"
   
-  # Charge programs (6 slots like Deye)
-  programs:
-    - slot: 1
-      enabled: true
-      time: "00:00"
-      soc_target: 100
-      charge_from_grid: true
-    - slot: 2
-      enabled: true
-      time: "07:00"
-      soc_target: 20
-      charge_from_grid: false
+  # ─────────────────────────────────────────────────────────────────────
+  # PERIODOS TARIFARIOS (2.0TD)
+  # Potencia contratada diferente por periodo
+  # ─────────────────────────────────────────────────────────────────────
+  tariff_periods:
+    valle:
+      hours: "00:00-08:00"
+      contracted_power_kw: 6.9
+      charge_battery: true
+      target_soc: 100
+    llano:
+      hours: "08:00-10:00,14:00-18:00,22:00-00:00"
+      contracted_power_kw: 3.45
+      charge_battery: false
+      target_soc: 50
+    punta:
+      hours: "10:00-14:00,18:00-22:00"
+      contracted_power_kw: 3.45
+      charge_battery: false
+      target_soc: 20
   
-  # PVPC price thresholds
-  price_cheap_threshold: 0.08
-  price_expensive_threshold: 0.18
+  # ─────────────────────────────────────────────────────────────────────
+  # CARGAS CONTROLABLES
+  # ─────────────────────────────────────────────────────────────────────
+  loads:
+    - id: calefaccion
+      name: "Calefacción"
+      priority: comfort
+      power_sensor: "sensor.energy_meter_calefaccion_potencia_de_la_fase_a"
+      switch_entity: "switch.energy_meter_calefaccion_interruptor"
+      max_power: 3000
+    - id: deshumidificador
+      name: "Deshumidificador Garaje"
+      priority: accessory
+      switch_entity: "switch.interior_garaje_boton_deshumificador_reverse"
+      max_power: 500
   
-  # Load management
-  load_manager_enabled: false
-  safety_margin: 10
-  check_interval: 30
-  loads: []
+  # ─────────────────────────────────────────────────────────────────────
+  # CARGADOR EV / BATERÍAS ADICIONALES
+  # ─────────────────────────────────────────────────────────────────────
+  ev_charging:
+    enabled: true
+    car_soc_sensor: "predbat.car_soc"
+    car_charging_slot: "binary_sensor.predbat_car_charging_slot"
+    charge_in_valle: true
+    max_charge_power_kw: 7.4
+    target_soc: 80
+    smart_plan_time: "07:30"
+  
+  # ─────────────────────────────────────────────────────────────────────
+  # LOAD MANAGER
+  # ─────────────────────────────────────────────────────────────────────
+  load_manager:
+    enabled: true
+    safety_margin_percent: 10
+    check_interval_seconds: 30
 
 schema:
-  inverter_max_power: int(1000,50000)
-  battery_capacity_kwh: float(1,200)
-  battery_min_soc: int(0,50)
-  battery_max_soc: int(50,100)
+  inverter:
+    max_power: int(1000,50000)
+    battery_capacity_kwh: float(1,200)
+    battery_min_soc: int(0,50)
+    battery_max_soc: int(50,100)
   
-  entities:
+  sensors:
     battery_soc: str
     battery_power: str
+    battery_capacity: str?
     grid_power: str
     load_power: str
     pv_power: str
-    work_mode: str
+    pvpc_price: str
+    tariff_period: str?
   
-  programs:
-    - slot: int(1,6)
-      enabled: bool
-      time: str
-      soc_target: int(0,100)
-      charge_from_grid: bool
+  controls:
+    work_mode: str?
+    grid_charge_start_soc: str?
+    program_1_soc: str?
+    program_1_time: str?
+    program_2_soc: str?
+    program_2_time: str?
   
-  price_cheap_threshold: float(0,1)
-  price_expensive_threshold: float(0,1)
+  tariff_periods:
+    valle:
+      hours: str
+      contracted_power_kw: float(0,20)
+      charge_battery: bool
+      target_soc: int(0,100)
+    llano:
+      hours: str
+      contracted_power_kw: float(0,20)
+      charge_battery: bool
+      target_soc: int(0,100)
+    punta:
+      hours: str
+      contracted_power_kw: float(0,20)
+      charge_battery: bool
+      target_soc: int(0,100)
   
-  load_manager_enabled: bool
-  safety_margin: int(0,50)
-  check_interval: int(5,300)
   loads:
     - id: str
       name: str
@@ -87,6 +154,20 @@ schema:
       power_sensor: str?
       switch_entity: str?
       max_power: int(0,50000)?
+  
+  ev_charging:
+    enabled: bool
+    car_soc_sensor: str?
+    car_charging_slot: str?
+    charge_in_valle: bool
+    max_charge_power_kw: float(0,22)?
+    target_soc: int(0,100)?
+    smart_plan_time: str?
+  
+  load_manager:
+    enabled: bool
+    safety_margin_percent: int(0,50)
+    check_interval_seconds: int(5,300)
 
 map:
   - config:rw

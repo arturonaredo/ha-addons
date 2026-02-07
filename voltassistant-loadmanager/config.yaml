@@ -1,0 +1,37 @@
+name: "VoltAssistant Load Manager"
+description: "Gestión inteligente de cargas con prioridades. Evita sobrecargar el inversor apagando cargas automáticamente."
+version: "1.0.0"
+slug: "voltassistant_loadmanager"
+url: "https://github.com/arturonaredo/ha-addons"
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:lightning-bolt"
+panel_title: "Load Manager"
+
+# Este schema genera el formulario automáticamente en HA
+options:
+  max_inverter_power: 6000
+  safety_margin: 10
+  check_interval: 30
+  loads: []
+
+schema:
+  max_inverter_power: int(1000,50000)
+  safety_margin: int(0,50)
+  check_interval: int(5,300)
+  loads:
+    - id: str
+      name: str
+      priority: list(essential|comfort|accessory)
+      power_sensor: str?
+      switch_entity: str?
+      max_power: int(0,50000)?
+
+map:
+  - config:rw

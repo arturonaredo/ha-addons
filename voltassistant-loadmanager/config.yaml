@@ -1,7 +1,7 @@
-name: "VoltAssistant Load Manager"
-description: "Gestión inteligente de cargas con prioridades. Evita sobrecargar el inversor apagando cargas automáticamente."
-version: "1.0.0"
-slug: "voltassistant_loadmanager"
+name: "Volt Load Manager"
+description: "Gestión inteligente de cargas y batería para inversores Deye. Control de carga por precio PVPC, predicción solar, y load shedding por prioridades."
+version: "1.0.1"
+slug: "volt_load_manager"
 url: "https://github.com/arturonaredo/ha-addons"
 arch:
   - amd64
@@ -11,18 +11,73 @@ startup: application
 boot: auto
 ingress: true
 ingress_port: 8099
-panel_icon: "mdi:lightning-bolt"
-panel_title: "Load Manager"
+panel_icon: "mdi:flash"
+panel_title: "Volt Load Manager"
 
-# Este schema genera el formulario automáticamente en HA
 options:
-  max_inverter_power: 6000
+  # Inverter config
+  inverter_max_power: 6000
+  battery_capacity_kwh: 32.6
+  battery_min_soc: 10
+  battery_max_soc: 100
+  
+  # HA entities - Deye/Solarman
+  entities:
+    battery_soc: "sensor.inverter_battery_soc"
+    battery_power: "sensor.inverter_battery_power"
+    grid_power: "sensor.inverter_grid_power"
+    load_power: "sensor.inverter_load_power"
+    pv_power: "sensor.inverter_pv_power"
+    work_mode: "select.inverter_work_mode"
+  
+  # Charge programs (6 slots like Deye)
+  programs:
+    - slot: 1
+      enabled: true
+      time: "00:00"
+      soc_target: 100
+      charge_from_grid: true
+    - slot: 2
+      enabled: true
+      time: "07:00"
+      soc_target: 20
+      charge_from_grid: false
+  
+  # PVPC price thresholds
+  price_cheap_threshold: 0.08
+  price_expensive_threshold: 0.18
+  
+  # Load management
+  load_manager_enabled: false
   safety_margin: 10
   check_interval: 30
   loads: []
 
 schema:
-  max_inverter_power: int(1000,50000)
+  inverter_max_power: int(1000,50000)
+  battery_capacity_kwh: float(1,200)
+  battery_min_soc: int(0,50)
+  battery_max_soc: int(50,100)
+  
+  entities:
+    battery_soc: str
+    battery_power: str
+    grid_power: str
+    load_power: str
+    pv_power: str
+    work_mode: str
+  
+  programs:
+    - slot: int(1,6)
+      enabled: bool
+      time: str
+      soc_target: int(0,100)
+      charge_from_grid: bool
+  
+  price_cheap_threshold: float(0,1)
+  price_expensive_threshold: float(0,1)
+  
+  load_manager_enabled: bool
   safety_margin: int(0,50)
   check_interval: int(5,300)
   loads:

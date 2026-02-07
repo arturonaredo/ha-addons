@@ -1,0 +1,4 @@
+#!/usr/bin/execlineb -S1
+# shellcheck shell=bash
+
+/run/s6/basedir/bin/halt

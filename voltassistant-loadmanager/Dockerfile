@@ -10,8 +10,5 @@ COPY package.json ./
 RUN npm install --omit=dev
 COPY server.js ./
 
-# Copy run script
-COPY run.sh /
-RUN chmod a+x /run.sh
-
-CMD [ "/run.sh" ]
+# Copy s6-overlay service
+COPY rootfs /

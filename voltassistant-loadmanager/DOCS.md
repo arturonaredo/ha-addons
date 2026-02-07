@@ -1,54 +1,54 @@
 # Volt Load Manager
 
-Gestión inteligente de batería y cargas para inversores Deye/Solarman con tarifas PVPC.
+Smart battery and load management for Deye/Solarman inverters with PVPC tariffs.
 
-## Características
+## Features
 
-- **Optimización de carga por precio** - Carga automática cuando el precio es bajo
-- **Periodos tarifarios** - Soporte para tarifas 2.0TD (punta/llano/valle)
-- **Target SOC manual** - Override para forzar carga cuando quieras
-- **Load shedding** - Apaga cargas automáticamente si superas la potencia contratada
-- **Fines de semana** - Opción para mantener batería al 100%
+- **Price-based charging** - Automatically charge when electricity is cheap
+- **Tariff periods** - Full support for Spanish 2.0TD tariffs (punta/llano/valle)
+- **Manual SOC target** - Override automatic decisions when needed
+- **Load shedding** - Automatically turn off loads to prevent exceeding contracted power
+- **Weekend mode** - Option to keep battery at 100% during weekends
 
 ---
 
-## Configuración
+## Configuration
 
-### Inversor
+### Inverter
 
-| Campo | Descripción | Ejemplo |
+| Field | Description | Example |
 |-------|-------------|---------|
-| `max_power` | Potencia máxima del inversor (W) | 6000 |
-| `battery_capacity_kwh` | Capacidad de la batería (kWh) | 32.6 |
-| `battery_min_soc` | SOC mínimo de seguridad (%) | 10 |
-| `battery_max_soc` | SOC máximo (%) | 100 |
+| `max_power` | Maximum inverter output (W) | 6000 |
+| `battery_capacity_kwh` | Total battery capacity (kWh) | 32.6 |
+| `battery_min_soc` | Safety floor SOC (%) | 10 |
+| `battery_max_soc` | Maximum SOC (%) | 100 |
 
-### Sensores
+### Sensors
 
-Entidades de Home Assistant para leer el estado del inversor:
+Home Assistant entities to read inverter state:
 
-| Campo | Descripción | Ejemplo |
+| Field | Description | Example |
 |-------|-------------|---------|
-| `battery_soc` | SOC de la batería | `sensor.predbat_battery_soc_2` |
-| `battery_power` | Potencia batería (W) | `sensor.inverter_battery_power` |
-| `grid_power` | Potencia de red (W) | `sensor.inverter_grid_power` |
-| `load_power` | Consumo total (W) | `sensor.inverter_load_power` |
-| `pv_power` | Producción solar (W) | `sensor.inverter_pv_power` |
-| `pvpc_price` | Precio PVPC actual | `sensor.esios_pvpc_octopus3` |
-| `tariff_period` | Periodo tarifario | `sensor.predbat_periodo_potencia` |
+| `battery_soc` | Battery state of charge | `sensor.inverter_battery_soc` |
+| `battery_power` | Battery power (W) | `sensor.inverter_battery_power` |
+| `grid_power` | Grid power (W) | `sensor.inverter_grid_power` |
+| `load_power` | Total consumption (W) | `sensor.inverter_load_power` |
+| `pv_power` | Solar production (W) | `sensor.inverter_pv_power` |
+| `pvpc_price` | Current PVPC price | `sensor.esios_pvpc` |
+| `tariff_period` | Current tariff period | `sensor.predbat_periodo_potencia` |
 
-### Controles
+### Controls
 
-Entidades para controlar el inversor:
+Entities to control the inverter:
 
-| Campo | Descripción | Ejemplo |
+| Field | Description | Example |
 |-------|-------------|---------|
-| `program_1_soc` | SOC objetivo programa 1 | `number.inverter_program_1_soc` |
-| `grid_charge_start_soc` | Iniciar carga de red | `number.inverter_battery_grid_charging_start` |
+| `program_1_soc` | Program 1 SOC target | `number.inverter_program_1_soc` |
+| `grid_charge_start_soc` | Grid charge trigger | `number.inverter_battery_grid_charging_start` |
 
-### Periodos tarifarios (2.0TD)
+### Tariff Periods (2.0TD)
 
-Configura la potencia contratada y comportamiento por periodo:
+Configure contracted power and behavior per period:
 
 ```yaml
 tariff_periods:
@@ -69,110 +69,110 @@ tariff_periods:
     target_soc: 20
 ```
 
-### Optimización de batería
+### Battery Optimization
 
 ```yaml
 battery_optimization:
   enabled: true
-  min_soc: 10                      # Nunca bajar de esto
-  default_target_soc: 80           # Target por defecto
-  always_charge_below_price: 0.05  # Cargar siempre si precio < 0.05€
-  never_charge_above_price: 0.15   # No cargar si precio > 0.15€
-  keep_full_weekends: true         # 100% en fines de semana
+  min_soc: 10                      # Never go below this
+  default_target_soc: 80           # Default target
+  always_charge_below_price: 0.05  # Always charge if price < €0.05
+  never_charge_above_price: 0.15   # Never charge if price > €0.15
+  keep_full_weekends: true         # 100% on weekends
 ```
 
-### Cargas controlables
+### Controllable Loads
 
-Lista de cargas que el sistema puede apagar si hay sobrecarga:
+List of loads that can be turned off during overload:
 
 ```yaml
 loads:
-  - id: calefaccion
-    name: "Calefacción"
+  - id: heating
+    name: "Heating"
     priority: comfort              # essential | comfort | accessory
-    power_sensor: "sensor.energy_meter_calefaccion_potencia_de_la_fase_a"
-    switch_entity: "switch.energy_meter_calefaccion_interruptor"
+    power_sensor: "sensor.heating_power"
+    switch_entity: "switch.heating"
     max_power: 3000
 ```
 
-**Prioridades:**
-- `essential` - Nunca se apaga
-- `comfort` - Se apaga si las accessory no son suficientes
-- `accessory` - Primero en apagarse
+**Priorities:**
+- `essential` - Never turned off
+- `comfort` - Turned off if accessory loads aren't enough
+- `accessory` - First to be turned off
 
 ---
 
-## Panel de control
+## Control Panel
 
-El addon añade **"Volt Load Manager"** al menú lateral de Home Assistant.
+The addon adds **"Volt Load Manager"** to the Home Assistant sidebar.
 
-### Funciones del panel:
+### Panel Features:
 
-- **SOC actual** con barra de progreso y marcador de target
-- **Target manual** - Introduce un % y pulsa "Aplicar" para forzar carga
-- **Botón Auto** - Vuelve al modo automático
-- **Periodo tarifario** - Muestra valle/llano/punta activo
-- **Estado de cargas** - Muestra cargas activas y apagadas
-- **Balancear** - Ejecuta balance manual
-- **Restaurar** - Enciende todas las cargas apagadas
+- **Current SOC** with progress bar and target marker
+- **Manual target** - Enter a % and click "Apply" to force charging
+- **Auto button** - Return to automatic mode
+- **Tariff period** - Shows active valle/llano/punta
+- **Load status** - Shows active and shed loads
+- **Balance** - Manually trigger load balancing
+- **Restore** - Turn all shed loads back on
 
 ---
 
 ## API
 
-### Estado
+### Status
 ```
 GET /api/status
 ```
 
-### Target manual
+### Manual Target
 ```bash
-# Poner target al 100%
+# Set target to 100%
 POST /api/target
 {"soc": 100}
 
-# Volver a automático
+# Return to automatic
 DELETE /api/target
 ```
 
-### Balance de cargas
+### Load Balancing
 ```
 POST /api/balance
 POST /api/restore
 ```
 
-### Aplicar decisión de carga
+### Apply Charging Decision
 ```
 POST /api/apply
 ```
 
 ---
 
-## Lógica de decisión
+## Decision Logic
 
-El sistema decide cuándo cargar siguiendo esta prioridad:
+The system decides when to charge following this priority:
 
-1. **Target manual** → Si hay override activo, usa ese valor
-2. **Fin de semana** → Si `keep_full_weekends: true`, target 100%
-3. **Precio muy bajo** → Si precio < `always_charge_below_price`, target 100%
-4. **Precio muy alto** → Si precio > `never_charge_above_price`, no cargar
-5. **Precio intermedio** → Target proporcional al precio
-6. **Periodo tarifario** → Usa el target del periodo actual
+1. **Manual target** → If override is active, use that value
+2. **Weekend** → If `keep_full_weekends: true`, target 100%
+3. **Very low price** → If price < `always_charge_below_price`, target 100%
+4. **Very high price** → If price > `never_charge_above_price`, don't charge
+5. **Mid-range price** → Proportional target based on price
+6. **Tariff period** → Use the period's configured target
 
 ---
 
 ## Troubleshooting
 
-### El inversor no carga
-- Verifica que `switch.inverter_battery_grid_charging` está ON en HA
-- Comprueba que `select.inverter_program_1_charging` está en "Grid"
-- Revisa los logs del addon
+### Inverter won't charge
+- Verify `switch.inverter_battery_grid_charging` is ON in HA
+- Check `select.inverter_program_1_charging` is set to "Grid"
+- Review addon logs
 
-### Las cargas no se apagan
-- Verifica que `load_manager.enabled: true`
-- Comprueba que las entidades `switch_entity` existen y funcionan
-- El sistema solo apaga cargas `comfort` y `accessory`, nunca `essential`
+### Loads not shedding
+- Verify `load_manager.enabled: true`
+- Check that `switch_entity` values exist and work
+- Only `comfort` and `accessory` loads are shed, never `essential`
 
-### El precio no se lee
-- Verifica que tienes configurada la integración PVPC/ESIOS
-- Comprueba el sensor `sensor.esios_pvpc_octopus3` en HA
+### Price not reading
+- Verify you have the PVPC/ESIOS integration configured
+- Check the price sensor exists in HA Developer Tools

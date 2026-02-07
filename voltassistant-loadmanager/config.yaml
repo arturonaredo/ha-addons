@@ -1,6 +1,6 @@
 name: "Volt Load Manager"
-description: "Gestión inteligente de cargas y batería para inversores Deye. Control por periodos tarifarios (punta/llano/valle), carga en horas baratas, y load shedding por prioridades."
-version: "1.1.0"
+description: "Smart battery and load management for Deye/Solarman inverters. PVPC price optimization, tariff periods, and priority-based load shedding."
+version: "1.2.0"
 slug: "volt_load_manager"
 url: "https://github.com/arturonaredo/ha-addons"
 arch:
@@ -15,18 +15,12 @@ panel_icon: "mdi:flash"
 panel_title: "Volt Load Manager"
 
 options:
-  # ─────────────────────────────────────────────────────────────────────
-  # INVERSOR
-  # ─────────────────────────────────────────────────────────────────────
   inverter:
     max_power: 6000
     battery_capacity_kwh: 32.6
     battery_min_soc: 10
     battery_max_soc: 100
   
-  # ─────────────────────────────────────────────────────────────────────
-  # SENSORES (Deye/Solarman)
-  # ─────────────────────────────────────────────────────────────────────
   sensors:
     battery_soc: "sensor.predbat_battery_soc_2"
     battery_power: "sensor.inverter_battery_power"
@@ -37,9 +31,6 @@ options:
     pvpc_price: "sensor.esios_pvpc_octopus3"
     tariff_period: "sensor.predbat_periodo_potencia"
   
-  # ─────────────────────────────────────────────────────────────────────
-  # CONTROLES (Deye/Solarman)
-  # ─────────────────────────────────────────────────────────────────────
   controls:
     work_mode: "select.inverter_work_mode"
     grid_charge_start_soc: "number.inverter_battery_grid_charging_start"
@@ -48,10 +39,6 @@ options:
     program_2_soc: "number.inverter_program_2_soc"
     program_2_time: "time.inverter_program_2_time"
   
-  # ─────────────────────────────────────────────────────────────────────
-  # PERIODOS TARIFARIOS (2.0TD)
-  # Potencia contratada diferente por periodo
-  # ─────────────────────────────────────────────────────────────────────
   tariff_periods:
     valle:
       hours: "00:00-08:00"
@@ -69,27 +56,10 @@ options:
       charge_battery: false
       target_soc: 20
   
-  # ─────────────────────────────────────────────────────────────────────
-  # CARGAS CONTROLABLES
-  # ─────────────────────────────────────────────────────────────────────
-  loads:
-    - id: calefaccion
-      name: "Calefacción"
-      priority: comfort
-      power_sensor: "sensor.energy_meter_calefaccion_potencia_de_la_fase_a"
-      switch_entity: "switch.energy_meter_calefaccion_interruptor"
-      max_power: 3000
-    - id: deshumidificador
-      name: "Deshumidificador Garaje"
-      priority: accessory
-      switch_entity: "switch.interior_garaje_boton_deshumificador_reverse"
-      max_power: 500
+  loads: []
   
-  # ─────────────────────────────────────────────────────────────────────
-  # CARGADOR EV / BATERÍAS ADICIONALES
-  # ─────────────────────────────────────────────────────────────────────
   ev_charging:
-    enabled: true
+    enabled: false
     car_soc_sensor: "predbat.car_soc"
     car_charging_slot: "binary_sensor.predbat_car_charging_slot"
     charge_in_valle: true
@@ -97,101 +67,90 @@ options:
     target_soc: 80
     smart_plan_time: "07:30"
   
-  # ─────────────────────────────────────────────────────────────────────
-  # LOAD MANAGER
-  # ─────────────────────────────────────────────────────────────────────
   load_manager:
     enabled: true
     safety_margin_percent: 10
     check_interval_seconds: 30
   
-  # ─────────────────────────────────────────────────────────────────────
-  # BATTERY OPTIMIZATION
-  # ─────────────────────────────────────────────────────────────────────
   battery_optimization:
     enabled: true
-    # SOC mínimo de seguridad (nunca bajar de esto)
     min_soc: 10
-    # SOC objetivo por defecto cuando no hay override
     default_target_soc: 80
-    # Cargar siempre que el precio esté por debajo de este valor
     always_charge_below_price: 0.05
-    # No cargar si el precio está por encima de este valor
     never_charge_above_price: 0.15
-    # Mantener batería llena los fines de semana
     keep_full_weekends: true
 
 schema:
   inverter:
-    max_power: int(1000,50000)
-    battery_capacity_kwh: float(1,200)
-    battery_min_soc: int(0,50)
-    battery_max_soc: int(50,100)
+    max_power: "int(1000,50000)"
+    battery_capacity_kwh: "float(1,200)"
+    battery_min_soc: "int(0,50)"
+    battery_max_soc: "int(50,100)"
   
   sensors:
-    battery_soc: str
-    battery_power: str
-    battery_capacity: str?
-    grid_power: str
-    load_power: str
-    pv_power: str
-    pvpc_price: str
-    tariff_period: str?
+    battery_soc: "str"
+    battery_power: "str"
+    battery_capacity: "str?"
+    grid_power: "str"
+    load_power: "str"
+    pv_power: "str"
+    pvpc_price: "str"
+    tariff_period: "str?"
   
   controls:
-    work_mode: str?
-    grid_charge_start_soc: str?
-    program_1_soc: str?
-    program_1_time: str?
-    program_2_soc: str?
-    program_2_time: str?
+    work_mode: "str?"
+    grid_charge_start_soc: "str?"
+    program_1_soc: "str?"
+    program_1_time: "str?"
+    program_2_soc: "str?"
+    program_2_time: "str?"
   
   tariff_periods:
     valle:
-      hours: str
-      contracted_power_kw: float(0,20)
-      charge_battery: bool
-      target_soc: int(0,100)
+      hours: "str"
+      contracted_power_kw: "float(0,20)"
+      charge_battery: "bool"
+      target_soc: "int(0,100)"
     llano:
-      hours: str
-      contracted_power_kw: float(0,20)
-      charge_battery: bool
-      target_soc: int(0,100)
+      hours: "str"
+      contracted_power_kw: "float(0,20)"
+      charge_battery: "bool"
+      target_soc: "int(0,100)"
     punta:
-      hours: str
-      contracted_power_kw: float(0,20)
-      charge_battery: bool
-      target_soc: int(0,100)
+      hours: "str"
+      contracted_power_kw: "float(0,20)"
+      charge_battery: "bool"
+      target_soc: "int(0,100)"
   
   loads:
-    - id: str
-      name: str
-      priority: list(essential|comfort|accessory)
-      power_sensor: str?
-      switch_entity: str?
-      max_power: int(0,50000)?
+    - id: "str"
+      name: "str"
+      priority: "list(essential|comfort|accessory)"
+      power_sensor: "str?"
+      switch_entity: "str?"
+      max_power: "int(0,50000)?"
   
   ev_charging:
-    enabled: bool
-    car_soc_sensor: str?
-    car_charging_slot: str?
-    charge_in_valle: bool
-    max_charge_power_kw: float(0,22)?
-    target_soc: int(0,100)?
-    smart_plan_time: str?
+    enabled: "bool"
+    car_soc_sensor: "str?"
+    car_charging_slot: "str?"
+    charge_in_valle: "bool"
+    max_charge_power_kw: "float(0,22)?"
+    target_soc: "int(0,100)?"
+    smart_plan_time: "str?"
   
   load_manager:
-    enabled: bool
-    safety_margin_percent: int(0,50)
-    check_interval_seconds: int(5,300)
+    enabled: "bool"
+    safety_margin_percent: "int(0,50)"
+    check_interval_seconds: "int(5,300)"
   
   battery_optimization:
-    enabled: bool
-    min_soc: int(0,50)
-    default_target_soc: int(50,100)
-    always_charge_below_price: float(0,0.5)
-    never_charge_above_price: float(0,0.5)
-    keep_full_weekends: bool
+    enabled: "bool"
+    min_soc: "int(0,50)"
+    default_target_soc: "int(50,100)"
+    always_charge_below_price: "float(0,0.5)"
+    never_charge_above_price: "float(0,0.5)"
+    keep_full_weekends: "bool"
 
 map:
   - config:rw

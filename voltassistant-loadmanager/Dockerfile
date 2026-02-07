@@ -10,5 +10,5 @@ COPY package.json ./
 RUN npm install --omit=dev
 COPY server.js ./
 
-# Copy s6-overlay service
-COPY rootfs /
+# Run directly without s6-overlay
+CMD ["node", "server.js"]

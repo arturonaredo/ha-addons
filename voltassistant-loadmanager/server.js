@@ -1139,6 +1139,8 @@ const html = `<!DOCTYPE html>
       
       <button class="btn" onclick="saveConfig()">💾 Save Configuration</button>
       <button class="btn secondary" onclick="loadConfig()">🔄 Reload</button>
+      <button class="btn secondary" onclick="testAllFromConfig()" style="background:#d29922;">🧪 Test Sensors</button>
+      <div id="config-test-result" class="sub" style="margin-top:12px;"></div>
     </div>
   </div>
   
@@ -1347,6 +1349,55 @@ const html = `<!DOCTYPE html>
     async function dismissAlerts() {
       await fetch(base + '/api/alerts/clear', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
       refresh();
+    }
+    
+    async function testAllFromConfig() {
+      const resultEl = document.getElementById('config-test-result');
+      resultEl.innerHTML = '<span style="color:#d29922;">🧪 Testing sensors...</span>';
+      
+      const sensors = [
+        { id: 'cfg-sens-soc', name: 'Battery SOC' },
+        { id: 'cfg-sens-bat-power', name: 'Battery Power' },
+        { id: 'cfg-sens-grid', name: 'Grid Power' },
+        { id: 'cfg-sens-load', name: 'Load Power' },
+        { id: 'cfg-sens-pv', name: 'Solar Power' },
+        { id: 'cfg-sens-price', name: 'PVPC Price' },
+        { id: 'cfg-ctrl-prog1', name: 'Program 1 SOC' },
+        { id: 'cfg-ctrl-grid-start', name: 'Grid Charge Start' }
+      ];
+      
+      const results = [];
+      for (const s of sensors) {
+        const entityId = document.getElementById(s.id)?.value;
+        if (!entityId) continue;
+        
+        try {
+          const res = await fetch(base + '/api/test-entity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity_id: entityId })
+          });
+          const data = await res.json();
+          results.push({
+            name: s.name,
+            entity: entityId,
+            ok: data.found,
+            value: data.value
+          });
+        } catch (e) {
+          results.push({ name: s.name, entity: entityId, ok: false, error: e.message });
+        }
+      }
+      
+      const html = results.map(r => 
+        '<div style="margin:4px 0;">' +
+          (r.ok ? '✅' : '❌') + ' <strong>' + r.name + '</strong>: ' +
+          '<code>' + r.entity + '</code>' +
+          (r.ok ? ' = ' + r.value : ' (not found)') +
+        '</div>'
+      ).join('');
+      
+      resultEl.innerHTML = html || '<span style="color:#8b949e;">No sensors configured</span>';
     }
     
     // ─────────────────────────────────────────────────────────────────────────

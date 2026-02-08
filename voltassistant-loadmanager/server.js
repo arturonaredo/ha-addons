@@ -2240,6 +2240,35 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Content-Type', 'text/html');
       res.end(html);
     
+    } else if (path === '/api/demo') {
+      // Generate demo data for testing UI without HA
+      const hour = new Date().getHours();
+      const demoState = {
+        battery: { soc: 65 + Math.random() * 20, kwh: 21.2, capacity: 32.6, power: hour < 8 ? 2500 : -1500 },
+        pv: { power: hour >= 8 && hour <= 18 ? 3000 + Math.random() * 2000 : 0 },
+        grid: { power: hour >= 10 && hour <= 14 ? -1500 : 500 },
+        load: { power: 1200 + Math.random() * 800 },
+        currentPrice: 0.08 + Math.random() * 0.12,
+        currentPeriod: hour >= 0 && hour < 8 || hour >= 22 ? 'valle' : hour >= 10 && hour < 14 || hour >= 18 && hour < 22 ? 'punta' : 'llano',
+        effectiveTargetSoc: 80,
+        manualTargetSoc: null,
+        manualTargetExpiry: null,
+        chargingDecision: hour < 8 ? 'charge' : 'hold',
+        chargingReason: hour < 8 ? 'Valle period - cheap electricity' : 'Waiting for cheaper hours',
+        contractedPower: 6900,
+        usagePercent: 25,
+        isOverloaded: false,
+        shedLoads: [],
+        loads: [
+          { id: 'ev_charger', name: 'EV Charger', priority: 'comfort', current_power: 0 },
+          { id: 'pool_pump', name: 'Pool Pump', priority: 'accessory', current_power: 750 },
+          { id: 'ac_living', name: 'Living Room AC', priority: 'comfort', current_power: 1200 }
+        ],
+        haConnection: { status: 'demo', lastSuccess: new Date().toISOString() },
+        alerts: { active: [], history: [] }
+      };
+      res.end(JSON.stringify(demoState));
+    
     } else if (path === '/health' || path === '/api/health') {
       res.end(JSON.stringify({
         status: 'ok',

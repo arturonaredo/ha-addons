@@ -627,7 +627,7 @@ const html = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>⚡ VoltAssistant <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span> <span id="last-update" style="font-size:11px;font-weight:normal;color:#8b949e;">⏱️ --</span></h1>
+  <h1>⚡ VoltAssistant <span id="conn-status" style="font-size:10px;vertical-align:middle;margin-left:8px;">🔴</span> <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span> <span id="last-update" style="font-size:11px;font-weight:normal;color:#8b949e;">⏱️ --</span></h1>
   
   <div id="alert-banner" class="alert-banner">
     <button class="dismiss" onclick="dismissAlerts()">✕</button>
@@ -1414,8 +1414,10 @@ const html = `<!DOCTYPE html>
           '</div>'
         ).join('') : '<p style="color:#8b949e">No loads configured. Go to Configuration tab to add loads.</p>';
         
-        // Update timestamp
+        // Update timestamp and connection status
         document.getElementById('last-update').textContent = '⏱️ ' + new Date().toLocaleTimeString();
+        document.getElementById('conn-status').textContent = d.haConnection?.status === 'connected' ? '🟢' : '🔴';
+        document.getElementById('conn-status').title = d.haConnection?.status === 'connected' ? 'Connected to HA' : 'Disconnected from HA';
         
         // Update alerts
         if (d.alerts && d.alerts.active && d.alerts.active.length > 0) {

@@ -785,6 +785,7 @@ const html = `<!DOCTYPE html>
       <div class="row"><span>Contracted Power</span><span id="contracted">--</span></div>
       <div class="row"><span>Current Usage</span><span id="usage">--</span></div>
       <div class="row"><span>Next Period</span><span id="next-period">--</span></div>
+      <div class="row"><span>Price Quality</span><span id="price-quality">--</span></div>
     </div>
     
     <div class="card wide" style="padding:20px;">
@@ -1539,6 +1540,15 @@ const html = `<!DOCTYPE html>
           nextPeriod = 'Valle';
         }
         document.getElementById('next-period').innerHTML = nextPeriod ? nextChange + ' → <strong>' + nextPeriod + '</strong>' : nextChange;
+        
+        // Price quality indicator
+        const price = d.currentPrice || 0;
+        let quality, qualityColor;
+        if (price < 0.06) { quality = '🟢 Excellent'; qualityColor = '#3fb950'; }
+        else if (price < 0.10) { quality = '🟡 Good'; qualityColor = '#d29922'; }
+        else if (price < 0.15) { quality = '🟠 Average'; qualityColor = '#f0883e'; }
+        else { quality = '🔴 Expensive'; qualityColor = '#f85149'; }
+        document.getElementById('price-quality').innerHTML = '<span style="color:' + qualityColor + '">' + quality + '</span>';
         document.getElementById('price').textContent = d.currentPrice !== null ? d.currentPrice.toFixed(3) + ' €/kWh' : '--';
         document.getElementById('contracted').textContent = (d.contractedPower/1000).toFixed(2) + ' kW';
         document.getElementById('usage').innerHTML = (d.load.power/1000).toFixed(2) + ' kW (' + d.usagePercent.toFixed(0) + '%)';

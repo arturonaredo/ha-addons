@@ -2607,6 +2607,20 @@ const server = http.createServer(async (req, res) => {
       await updateState();
       res.end(JSON.stringify(state));
     
+    } else if (path === '/api/quick') {
+      // Quick status for widgets and simple integrations
+      res.end(JSON.stringify({
+        soc: state.battery.soc,
+        target: state.effectiveTargetSoc,
+        solar: state.pv.power,
+        load: state.load.power,
+        grid: state.grid.power,
+        price: state.currentPrice,
+        period: state.currentPeriod,
+        charging: state.chargingDecision === 'charge',
+        ok: !state.isOverloaded && state.battery.soc > 15
+      }));
+    
     } else if (path.startsWith('/api/set/')) {
       // Simple URL-based control: /api/set/target/80, /api/set/action/charge_100
       const parts = path.split('/').filter(Boolean);

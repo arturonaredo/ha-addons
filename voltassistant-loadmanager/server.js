@@ -982,6 +982,34 @@ const html = `<!DOCTYPE html>
       </div>
       
       <div class="section">
+        <h3>🎛️ Controls (HA Entity IDs)</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Program 1 SOC Target</label>
+            <input type="text" id="cfg-ctrl-prog1" placeholder="number.inverter_program_1_soc">
+            <div class="hint">Number entity to set charging target</div>
+          </div>
+          <div class="form-group">
+            <label>Grid Charge Start SOC</label>
+            <input type="text" id="cfg-ctrl-grid-start" placeholder="number.inverter_grid_charging_start">
+            <div class="hint">Number entity to trigger grid charging</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Work Mode Select</label>
+            <input type="text" id="cfg-ctrl-workmode" placeholder="select.inverter_work_mode">
+            <div class="hint">(Optional) Select entity for work mode</div>
+          </div>
+          <div class="form-group">
+            <label>Tariff Period Sensor</label>
+            <input type="text" id="cfg-sens-period" placeholder="sensor.tariff_period">
+            <div class="hint">(Optional) Shows valle/llano/punta</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
         <h3>🎯 Battery Optimization</h3>
         <div class="form-row">
           <div class="form-group">
@@ -1683,6 +1711,12 @@ const html = `<!DOCTYPE html>
       document.getElementById('cfg-sens-pv').value = c.sensors?.pv_power || '';
       document.getElementById('cfg-sens-price').value = c.sensors?.pvpc_price || '';
       
+      // Controls
+      document.getElementById('cfg-ctrl-prog1').value = c.controls?.program_1_soc || '';
+      document.getElementById('cfg-ctrl-grid-start').value = c.controls?.grid_charge_start_soc || '';
+      document.getElementById('cfg-ctrl-workmode').value = c.controls?.work_mode || '';
+      document.getElementById('cfg-sens-period').value = c.sensors?.tariff_period || '';
+      
       document.getElementById('cfg-opt-default-soc').value = c.battery_optimization?.default_target_soc || 80;
       document.getElementById('cfg-opt-weekends').value = c.battery_optimization?.keep_full_weekends !== false ? 'true' : 'false';
       document.getElementById('cfg-opt-low-price').value = c.battery_optimization?.always_charge_below_price || 0.05;
@@ -1809,7 +1843,13 @@ const html = `<!DOCTYPE html>
           grid_power: document.getElementById('cfg-sens-grid').value,
           load_power: document.getElementById('cfg-sens-load').value,
           pv_power: document.getElementById('cfg-sens-pv').value,
-          pvpc_price: document.getElementById('cfg-sens-price').value
+          pvpc_price: document.getElementById('cfg-sens-price').value,
+          tariff_period: document.getElementById('cfg-sens-period').value
+        },
+        controls: {
+          program_1_soc: document.getElementById('cfg-ctrl-prog1').value,
+          grid_charge_start_soc: document.getElementById('cfg-ctrl-grid-start').value,
+          work_mode: document.getElementById('cfg-ctrl-workmode').value
         },
         battery_optimization: {
           enabled: true,

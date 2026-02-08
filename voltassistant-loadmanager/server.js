@@ -614,10 +614,26 @@ const html = `<!DOCTYPE html>
     .chart-container { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     .chart-container h3 { font-size: 14px; margin-bottom: 12px; }
     .chart-wrapper { height: 200px; }
+    
+    /* Alert badge */
+    .alert-badge { position: relative; display: inline-block; }
+    .alert-badge .count { position: absolute; top: -8px; right: -8px; background: #f85149; color: #fff; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+    .alert-banner { background: linear-gradient(90deg, #f8514922 0%, #f8514911 100%); border: 1px solid #f8514944; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: none; }
+    .alert-banner.show { display: block; }
+    .alert-banner .alert-title { font-weight: 600; color: #f85149; margin-bottom: 4px; }
+    .alert-banner .alert-items { font-size: 13px; color: #e6edf3; }
+    .alert-banner .dismiss { background: none; border: none; color: #8b949e; cursor: pointer; float: right; font-size: 16px; }
+    .alert-banner .dismiss:hover { color: #f85149; }
   </style>
 </head>
 <body>
-  <h1>⚡ VoltAssistant</h1>
+  <h1>⚡ VoltAssistant <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span></h1>
+  
+  <div id="alert-banner" class="alert-banner">
+    <button class="dismiss" onclick="dismissAlerts()">✕</button>
+    <div class="alert-title">⚠️ Active Alerts</div>
+    <div class="alert-items" id="alert-items">--</div>
+  </div>
   
   <div class="tabs">
     <button class="tab active" onclick="showPanel('status')">Status</button>
@@ -1238,7 +1254,25 @@ const html = `<!DOCTYPE html>
             '<span class="badge ' + l.priority + '">' + l.priority + '</span>' +
           '</div>'
         ).join('') : '<p style="color:#8b949e">No loads configured. Go to Configuration tab to add loads.</p>';
+        
+        // Update alerts
+        if (d.alerts && d.alerts.active && d.alerts.active.length > 0) {
+          document.getElementById('alert-indicator').style.display = 'inline-block';
+          document.getElementById('alert-count').textContent = d.alerts.active.length;
+          document.getElementById('alert-banner').classList.add('show');
+          document.getElementById('alert-items').innerHTML = d.alerts.active.map(a => 
+            '<div>' + (a.severity === 'danger' ? '🔴' : a.severity === 'warning' ? '🟡' : '🔵') + ' ' + a.message + '</div>'
+          ).join('');
+        } else {
+          document.getElementById('alert-indicator').style.display = 'none';
+          document.getElementById('alert-banner').classList.remove('show');
+        }
       } catch (e) { console.error(e); }
+    }
+    
+    async function dismissAlerts() {
+      await fetch(base + '/api/alerts/clear', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+      refresh();
     }
     
     // ─────────────────────────────────────────────────────────────────────────

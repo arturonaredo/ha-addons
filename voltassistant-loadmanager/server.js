@@ -1167,6 +1167,9 @@ const html = `<!DOCTYPE html>
       <button class="btn" onclick="saveConfig()">💾 Save Configuration</button>
       <button class="btn secondary" onclick="loadConfig()">🔄 Reload</button>
       <button class="btn secondary" onclick="testAllFromConfig()" style="background:#d29922;">🧪 Test Sensors</button>
+      <button class="btn secondary" onclick="exportConfig()">📤 Export</button>
+      <button class="btn secondary" onclick="document.getElementById('import-file').click()">📥 Import</button>
+      <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importConfig(event)">
       <div id="config-test-result" class="sub" style="margin-top:12px;"></div>
     </div>
   </div>
@@ -1432,6 +1435,39 @@ const html = `<!DOCTYPE html>
     async function dismissAlerts() {
       await fetch(base + '/api/alerts/clear', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
       refresh();
+    }
+    
+    function exportConfig() {
+      const blob = new Blob([JSON.stringify(currentConfig, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'voltassistant-config-' + new Date().toISOString().split('T')[0] + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    async function importConfig(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      try {
+        const text = await file.text();
+        const imported = JSON.parse(text);
+        
+        if (!imported.sensors && !imported.battery_optimization) {
+          alert('Invalid configuration file');
+          return;
+        }
+        
+        currentConfig = imported;
+        loadConfigValues(currentConfig);
+        document.getElementById('config-test-result').innerHTML = '<span class="ok">✅ Configuration imported. Click Save to apply.</span>';
+      } catch (e) {
+        alert('Error importing: ' + e.message);
+      }
+      
+      event.target.value = '';
     }
     
     async function testAllFromConfig() {

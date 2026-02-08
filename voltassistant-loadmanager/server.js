@@ -6,6 +6,7 @@
 const http = require('http');
 const fs = require('fs');
 const axios = require('axios');
+const { getSolarForecast, getPVPCPrices, generateChargingPlan, calculateMonthlySavings } = require('./forecast');
 
 // HA Supervisor API
 const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN;
@@ -533,6 +534,7 @@ const html = `<!DOCTYPE html>
   
   <div class="tabs">
     <button class="tab active" onclick="showPanel('status')">Status</button>
+    <button class="tab" onclick="showPanel('forecast')">🔮 Forecast</button>
     <button class="tab" onclick="showPanel('charts')">📊 Charts</button>
     <button class="tab" onclick="showPanel('config')">⚙️ Config</button>
     <button class="tab" onclick="showPanel('debug')">🐛 Debug</button>
@@ -587,6 +589,68 @@ const html = `<!DOCTYPE html>
       <button class="btn" onclick="runBalance()">🔄 Balance</button>
       <button class="btn secondary" onclick="restoreAll()">⬆️ Restore All</button>
     </div>
+  </div>
+  
+  <!-- FORECAST PANEL -->
+  <div id="forecast-panel" class="panel">
+    <div class="grid">
+      <div class="card">
+        <h2>☀️ Solar Today</h2>
+        <div class="big" id="fc-solar-today">--<span class="unit">kWh</span></div>
+        <div class="sub">Peak: <span id="fc-solar-peak">--</span>W at <span id="fc-solar-peak-hour">--</span>:00</div>
+      </div>
+      <div class="card">
+        <h2>☀️ Solar Tomorrow</h2>
+        <div class="big" id="fc-solar-tomorrow">--<span class="unit">kWh</span></div>
+      </div>
+      <div class="card">
+        <h2>💶 Avg Price Today</h2>
+        <div class="big" id="fc-price-avg">--<span class="unit">€</span></div>
+        <div class="sub">Min: <span id="fc-price-min">--</span> · Max: <span id="fc-price-max">--</span></div>
+      </div>
+      <div class="card">
+        <h2>💰 Monthly Savings</h2>
+        <div class="big ok" id="fc-savings">--<span class="unit">€</span></div>
+        <div class="sub" id="fc-savings-pct">--%</div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>🎯 Charging Plan</h2>
+      <div id="fc-plan-action" class="charging">
+        <div id="fc-plan-decision">Loading...</div>
+        <div class="sub" id="fc-plan-reason">--</div>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="row"><span>Next Charge Hour</span><span id="fc-next-charge">--</span></div>
+        <div class="row"><span>Optimal Hours</span><span id="fc-charge-hours">--</span></div>
+        <div class="row"><span>Needed from Grid</span><span id="fc-needed-kwh">--</span></div>
+        <div class="row"><span>Estimated Cost</span><span id="fc-est-cost">--</span></div>
+        <div class="row"><span>Solar Coverage</span><span id="fc-solar-coverage">--</span></div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>💶 Today's Prices</h2>
+      <div id="fc-price-chart" style="display:flex;gap:2px;height:100px;align-items:flex-end;margin-top:12px;"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#8b949e;">
+        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
+      </div>
+      <div style="margin-top:12px;">
+        <span class="badge" style="background:#3fb950">Cheapest: <span id="fc-cheapest-hours">--</span></span>
+        <span class="badge" style="background:#f85149;margin-left:8px;">Expensive: <span id="fc-expensive-hours">--</span></span>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>☀️ Solar Forecast</h2>
+      <div id="fc-solar-chart" style="display:flex;gap:2px;height:80px;align-items:flex-end;margin-top:12px;"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#8b949e;">
+        <span>06:00</span><span>09:00</span><span>12:00</span><span>15:00</span><span>18:00</span>
+      </div>
+    </div>
+    
+    <button class="btn" onclick="loadForecast()">🔄 Refresh Forecast</button>
   </div>
   
   <!-- CHARTS PANEL -->
@@ -836,6 +900,7 @@ const html = `<!DOCTYPE html>
       if (name === 'config') loadConfig();
       if (name === 'debug') { loadDebug(); loadLogs(); }
       if (name === 'charts') loadCharts();
+      if (name === 'forecast') loadForecast();
     }
     
     // ─────────────────────────────────────────────────────────────────────────
@@ -949,6 +1014,81 @@ const html = `<!DOCTYPE html>
         });
       } catch (e) {
         console.error('Failed to load charts:', e);
+      }
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // FORECAST
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    async function loadForecast() {
+      try {
+        const res = await fetch(base + '/api/forecast/all');
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+        
+        // Solar
+        if (d.solar?.today) {
+          document.getElementById('fc-solar-today').innerHTML = (d.solar.today.totalKwh || 0) + '<span class="unit">kWh</span>';
+          document.getElementById('fc-solar-peak').textContent = d.solar.today.peakWatts || '--';
+          document.getElementById('fc-solar-peak-hour').textContent = d.solar.today.peakHour ?? '--';
+        }
+        if (d.solar?.tomorrow) {
+          document.getElementById('fc-solar-tomorrow').innerHTML = (d.solar.tomorrow.totalKwh || 0) + '<span class="unit">kWh</span>';
+        }
+        
+        // Prices
+        if (d.prices?.today?.stats) {
+          const s = d.prices.today.stats;
+          document.getElementById('fc-price-avg').innerHTML = (s.avg * 100).toFixed(1) + '<span class="unit">¢</span>';
+          document.getElementById('fc-price-min').textContent = (s.min * 100).toFixed(1) + '¢';
+          document.getElementById('fc-price-max').textContent = (s.max * 100).toFixed(1) + '¢';
+          document.getElementById('fc-cheapest-hours').textContent = (s.cheapest || []).map(h => h + ':00').join(', ') || '--';
+          document.getElementById('fc-expensive-hours').textContent = (s.expensive || []).map(h => h + ':00').join(', ') || '--';
+        }
+        
+        // Price chart (bar chart)
+        if (d.prices?.today?.prices) {
+          const maxPrice = Math.max(...d.prices.today.prices.map(p => p.price));
+          const currentHour = new Date().getHours();
+          document.getElementById('fc-price-chart').innerHTML = d.prices.today.prices.map(p => {
+            const height = (p.price / maxPrice * 100).toFixed(0);
+            const color = p.hour === currentHour ? '#58a6ff' : d.prices.today.stats.cheapest?.includes(p.hour) ? '#3fb950' : d.prices.today.stats.expensive?.includes(p.hour) ? '#f85149' : '#30363d';
+            return '<div style="flex:1;background:' + color + ';height:' + height + '%;border-radius:2px;" title="' + p.hour + ':00 - ' + (p.price*100).toFixed(2) + '¢/kWh"></div>';
+          }).join('');
+        }
+        
+        // Solar chart (bar chart)
+        if (d.solar?.today?.forecasts) {
+          const daylight = d.solar.today.forecasts.filter(f => f.hour >= 6 && f.hour <= 20);
+          const maxWatts = Math.max(...daylight.map(f => f.watts), 1);
+          document.getElementById('fc-solar-chart').innerHTML = daylight.map(f => {
+            const height = (f.watts / maxWatts * 100).toFixed(0);
+            return '<div style="flex:1;background:#f0883e;height:' + height + '%;border-radius:2px;" title="' + f.hour + ':00 - ' + f.watts + 'W"></div>';
+          }).join('');
+        }
+        
+        // Plan
+        if (d.plan) {
+          const p = d.plan;
+          const box = document.getElementById('fc-plan-action');
+          box.className = 'charging ' + (p.action === 'charge_now' ? 'charge' : 'hold');
+          document.getElementById('fc-plan-decision').textContent = p.action === 'charge_now' ? '⚡ Charging Now' : p.action === 'wait_for_solar' ? '☀️ Waiting for Solar' : p.action === 'wait_for_cheap' ? '⏳ Waiting for Cheap Hour' : '✅ Battery OK';
+          document.getElementById('fc-plan-reason').textContent = p.reason || '--';
+          document.getElementById('fc-next-charge').textContent = p.nextChargeHour !== undefined ? p.nextChargeHour + ':00' : 'N/A';
+          document.getElementById('fc-charge-hours').textContent = p.chargeHours?.map(h => h + ':00').join(', ') || 'None needed';
+          document.getElementById('fc-needed-kwh').textContent = (p.neededKwh || 0) + ' kWh';
+          document.getElementById('fc-est-cost').textContent = '€' + (p.estimatedCost || 0).toFixed(2);
+          document.getElementById('fc-solar-coverage').textContent = (p.solarCoverage || 0) + ' kWh';
+        }
+        
+        // Savings
+        if (d.savings) {
+          document.getElementById('fc-savings').innerHTML = d.savings.monthlySavings + '<span class="unit">€</span>';
+          document.getElementById('fc-savings-pct').textContent = d.savings.savingsPercent + '% vs base';
+        }
+      } catch (e) {
+        console.error('Forecast error:', e);
       }
     }
     
@@ -1296,6 +1436,81 @@ const server = http.createServer(async (req, res) => {
       }
       
       res.end(JSON.stringify(tests));
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // FORECAST ENDPOINTS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    } else if (path === '/api/forecast/solar') {
+      try {
+        const cfg = getConfig();
+        const peakPower = (cfg.inverter?.max_power || 6000) / 1000;
+        const solar = await getSolarForecast(43.5322, -5.6611, peakPower);
+        res.end(JSON.stringify({ success: true, ...solar }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    } else if (path === '/api/forecast/prices') {
+      try {
+        const prices = await getPVPCPrices();
+        res.end(JSON.stringify({ success: true, ...prices }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    } else if (path === '/api/forecast/plan') {
+      try {
+        const [prices, solar] = await Promise.all([getPVPCPrices(), getSolarForecast()]);
+        const cfg = getConfig();
+        const plan = generateChargingPlan(prices, solar, {
+          capacityKwh: cfg.inverter?.battery_capacity_kwh || 32.6,
+          currentSoc: state.battery.soc,
+          targetSoc: state.effectiveTargetSoc,
+          chargeRateKw: (cfg.inverter?.max_power || 6000) / 1000
+        });
+        res.end(JSON.stringify({ success: true, plan }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    } else if (path === '/api/forecast/savings') {
+      try {
+        const prices = await getPVPCPrices();
+        const savings = calculateMonthlySavings(history, prices);
+        res.end(JSON.stringify({ success: true, ...savings }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    } else if (path === '/api/forecast/all') {
+      try {
+        const [prices, solar] = await Promise.all([getPVPCPrices(), getSolarForecast()]);
+        const cfg = getConfig();
+        const plan = generateChargingPlan(prices, solar, {
+          capacityKwh: cfg.inverter?.battery_capacity_kwh || 32.6,
+          currentSoc: state.battery.soc,
+          targetSoc: state.effectiveTargetSoc,
+          chargeRateKw: (cfg.inverter?.max_power || 6000) / 1000
+        });
+        const savings = calculateMonthlySavings(history, prices);
+        res.end(JSON.stringify({
+          success: true,
+          solar,
+          prices,
+          plan,
+          savings,
+          currentState: {
+            soc: state.battery.soc,
+            targetSoc: state.effectiveTargetSoc,
+            price: state.currentPrice,
+            period: state.currentPeriod
+          }
+        }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'Not found' }));

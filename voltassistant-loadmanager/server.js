@@ -2325,6 +2325,46 @@ const server = http.createServer(async (req, res) => {
     } else if (path === '/api/status') {
       await updateState();
       res.end(JSON.stringify(state));
+    
+    } else if (path.startsWith('/api/set/')) {
+      // Simple URL-based control: /api/set/target/80, /api/set/action/charge_100
+      const parts = path.split('/').filter(Boolean);
+      const cmd = parts[2];
+      const value = parts[3];
+      
+      if (cmd === 'target' && value) {
+        const soc = parseInt(value);
+        if (soc >= 10 && soc <= 100) {
+          state.manualTargetSoc = soc;
+          state.manualTargetExpiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+          saveState();
+          await applyCharging();
+          res.end(JSON.stringify({ success: true, target: soc }));
+        } else {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ success: false, error: 'SOC must be 10-100' }));
+        }
+      } else if (cmd === 'action' && value) {
+        // Redirect to quick-action handling
+        const validActions = ['charge_100','charge_80','charge_50','stop_charge','discharge','hold','night_mode','force_export','auto'];
+        if (validActions.includes(value)) {
+          // Simulate quick action
+          const fakeReq = { method: 'POST', on: (e, cb) => { if (e === 'end') cb(); } };
+          const body = JSON.stringify({ action: value });
+          // Handle action directly (simplified)
+          state.manualTargetSoc = value === 'charge_100' ? 100 : value === 'charge_80' ? 80 : value === 'charge_50' ? 50 : value === 'auto' ? null : state.manualTargetSoc;
+          if (value === 'auto') state.manualTargetExpiry = null;
+          else state.manualTargetExpiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+          saveState();
+          res.end(JSON.stringify({ success: true, action: value }));
+        } else {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ success: false, error: 'Unknown action' }));
+        }
+      } else {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'Usage: /api/set/target/{10-100} or /api/set/action/{action}' }));
+      }
     } else if (path === '/api/config' && req.method === 'GET') {
       res.end(JSON.stringify(getConfig()));
     } else if (path === '/api/config' && req.method === 'POST') {

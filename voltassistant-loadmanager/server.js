@@ -822,6 +822,8 @@ const html = `<!DOCTYPE html>
         <button class="btn secondary" onclick="quickAction('hold')">⏸️ Hold</button>
         <button class="btn secondary" onclick="quickAction('night_mode')">🌙 Night</button>
         <button class="btn secondary" onclick="quickAction('force_export')">📤 Export</button>
+        <button class="btn secondary" onclick="quickAction('vacation')">🏖️ Vacation</button>
+        <button class="btn secondary" onclick="quickAction('storm')">⛈️ Storm</button>
         <button class="btn" onclick="quickAction('auto')" style="background:#58a6ff;">🤖 Auto</button>
       </div>
       <div id="quick-action-result" class="sub" style="margin-top:12px;"></div>
@@ -2937,6 +2939,28 @@ const server = http.createServer(async (req, res) => {
               state.shedLoads = [];
               saveState();
               message = 'All loads restored';
+              log('success', message);
+              break;
+            
+            case 'vacation':
+              // Vacation mode: maintain 30% SOC, 7 days
+              state.manualTargetSoc = 30;
+              state.manualTargetExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+              saveState();
+              if (c.program_1_soc) await setNumber(c.program_1_soc, 30);
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 30);
+              message = 'Vacation mode: 30% SOC for 7 days';
+              log('success', message);
+              break;
+            
+            case 'storm':
+              // Storm mode: charge to 100% and hold
+              state.manualTargetSoc = 100;
+              state.manualTargetExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+              saveState();
+              if (c.program_1_soc) await setNumber(c.program_1_soc, 100);
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 100);
+              message = 'Storm mode: charging to 100% (48h hold)';
               log('success', message);
               break;
               

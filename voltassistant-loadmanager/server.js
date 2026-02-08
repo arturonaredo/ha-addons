@@ -366,12 +366,36 @@ const html = `<!DOCTYPE html>
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #30363d; }
     .section h3 { font-size: 14px; margin-bottom: 16px; color: #e6edf3; }
-    .load-item { background: #21262d; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-    .load-item .load-header { display: flex; justify-content: space-between; align-items: center; }
-    .load-item input, .load-item select { margin-top: 8px; }
-    .add-btn { background: none; border: 2px dashed #30363d; color: #8b949e; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; }
-    .add-btn:hover { border-color: #238636; color: #3fb950; }
-    .remove-btn { background: #f85149; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+    .load-table { width: 100%; }
+    .load-table .load-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #21262d; border-radius: 8px; margin-bottom: 8px; }
+    .load-table .load-info { flex: 1; }
+    .load-table .load-name { font-weight: 600; }
+    .load-table .load-entity { font-size: 12px; color: #8b949e; margin-top: 2px; }
+    .load-table .load-actions { display: flex; gap: 8px; }
+    .load-table .load-actions button { padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; }
+    .edit-btn { background: #30363d; color: #e6edf3; }
+    .edit-btn:hover { background: #484f58; }
+    .remove-btn { background: #f8514922; color: #f85149; }
+    .remove-btn:hover { background: #f8514944; }
+    .add-btn { background: #238636; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; margin-top: 12px; }
+    .add-btn:hover { background: #2ea043; }
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+    .modal h3 { margin-bottom: 20px; font-size: 18px; }
+    .modal .form-group { margin-bottom: 16px; }
+    .modal .form-group label { display: block; margin-bottom: 6px; font-size: 13px; color: #8b949e; }
+    .modal .form-group input, .modal .form-group select { width: 100%; padding: 10px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; font-size: 14px; }
+    .modal .form-group input:focus, .modal .form-group select:focus { border-color: #238636; outline: none; }
+    .modal .form-group .hint { font-size: 11px; color: #6e7681; margin-top: 4px; }
+    .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+    .modal-actions button { flex: 1; padding: 12px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .modal-actions .save-btn { background: #238636; color: #fff; }
+    .modal-actions .save-btn:hover { background: #2ea043; }
+    .modal-actions .cancel-btn { background: #30363d; color: #e6edf3; }
+    .modal-actions .cancel-btn:hover { background: #484f58; }
+    .empty-state { text-align: center; padding: 32px; color: #8b949e; }
   </style>
 </head>
 <body>
@@ -549,12 +573,56 @@ const html = `<!DOCTYPE html>
       
       <div class="section">
         <h3>🔌 Controllable Loads</h3>
-        <div id="config-loads"></div>
-        <button class="add-btn" onclick="addLoad()">+ Add Load</button>
+        <div id="config-loads" class="load-table"></div>
+        <button class="add-btn" onclick="openLoadModal(-1)">+ Add Load</button>
       </div>
       
       <button class="btn" onclick="saveConfig()">💾 Save Configuration</button>
       <button class="btn secondary" onclick="loadConfig()">🔄 Reload</button>
+    </div>
+  </div>
+  
+  <!-- Load Modal -->
+  <div id="load-modal" class="modal-overlay" onclick="if(event.target===this)closeLoadModal()">
+    <div class="modal">
+      <h3 id="modal-title">Add Load</h3>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="load-name" placeholder="e.g. EV Charger">
+        <div class="hint">Display name for this load</div>
+      </div>
+      <div class="form-group">
+        <label>ID</label>
+        <input type="text" id="load-id" placeholder="e.g. ev_charger">
+        <div class="hint">Unique identifier (lowercase, no spaces)</div>
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="load-priority">
+          <option value="essential">Essential - Never turn off</option>
+          <option value="comfort">Comfort - Turn off if needed</option>
+          <option value="accessory" selected>Accessory - First to turn off</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Switch Entity</label>
+        <input type="text" id="load-switch" placeholder="e.g. switch.ev_charger">
+        <div class="hint">Home Assistant switch to control this load</div>
+      </div>
+      <div class="form-group">
+        <label>Power Sensor (optional)</label>
+        <input type="text" id="load-power-sensor" placeholder="e.g. sensor.ev_charger_power">
+        <div class="hint">Sensor showing current power consumption</div>
+      </div>
+      <div class="form-group">
+        <label>Max Power (W)</label>
+        <input type="number" id="load-max-power" placeholder="e.g. 7400" value="1000">
+        <div class="hint">Maximum expected power consumption</div>
+      </div>
+      <div class="modal-actions">
+        <button class="cancel-btn" onclick="closeLoadModal()">Cancel</button>
+        <button class="save-btn" onclick="saveLoad()">Save Load</button>
+      </div>
     </div>
   </div>
   
@@ -638,42 +706,89 @@ const html = `<!DOCTYPE html>
       renderLoads(c.loads || []);
     }
     
+    let editingLoadIndex = -1;
+    
     function renderLoads(loads) {
+      if (!loads || loads.length === 0) {
+        document.getElementById('config-loads').innerHTML = '<div class="empty-state">No loads configured.<br>Click "Add Load" to add your first controllable load.</div>';
+        return;
+      }
       document.getElementById('config-loads').innerHTML = loads.map((l, i) => 
-        '<div class="load-item">' +
-          '<div class="load-header"><strong>' + (l.name || 'New Load') + '</strong><button class="remove-btn" onclick="removeLoad(' + i + ')">Remove</button></div>' +
-          '<div class="form-row">' +
-            '<input type="text" placeholder="ID" value="' + (l.id || '') + '" onchange="updateLoad(' + i + ',\\'id\\',this.value)">' +
-            '<input type="text" placeholder="Name" value="' + (l.name || '') + '" onchange="updateLoad(' + i + ',\\'name\\',this.value)">' +
+        '<div class="load-row">' +
+          '<div class="load-info">' +
+            '<div class="load-name">' + (l.name || 'Unnamed') + ' <span class="badge ' + l.priority + '">' + l.priority + '</span></div>' +
+            '<div class="load-entity">' + (l.switch_entity || 'No switch') + ' · ' + (l.max_power || '?') + 'W max</div>' +
           '</div>' +
-          '<div class="form-row">' +
-            '<select onchange="updateLoad(' + i + ',\\'priority\\',this.value)">' +
-              '<option value="essential"' + (l.priority==='essential'?' selected':'') + '>Essential</option>' +
-              '<option value="comfort"' + (l.priority==='comfort'?' selected':'') + '>Comfort</option>' +
-              '<option value="accessory"' + (l.priority==='accessory'?' selected':'') + '>Accessory</option>' +
-            '</select>' +
-            '<input type="number" placeholder="Max Power (W)" value="' + (l.max_power || '') + '" onchange="updateLoad(' + i + ',\\'max_power\\',parseInt(this.value))">' +
+          '<div class="load-actions">' +
+            '<button class="edit-btn" onclick="openLoadModal(' + i + ')">Edit</button>' +
+            '<button class="remove-btn" onclick="removeLoad(' + i + ')">Delete</button>' +
           '</div>' +
-          '<input type="text" placeholder="Switch Entity" value="' + (l.switch_entity || '') + '" onchange="updateLoad(' + i + ',\\'switch_entity\\',this.value)" style="margin-top:8px">' +
         '</div>'
       ).join('');
     }
     
-    function updateLoad(i, field, value) {
-      if (!currentConfig.loads) currentConfig.loads = [];
-      if (!currentConfig.loads[i]) currentConfig.loads[i] = {};
-      currentConfig.loads[i][field] = value;
+    function openLoadModal(index) {
+      editingLoadIndex = index;
+      const modal = document.getElementById('load-modal');
+      const title = document.getElementById('modal-title');
+      
+      if (index >= 0 && currentConfig.loads && currentConfig.loads[index]) {
+        const load = currentConfig.loads[index];
+        title.textContent = 'Edit Load';
+        document.getElementById('load-name').value = load.name || '';
+        document.getElementById('load-id').value = load.id || '';
+        document.getElementById('load-priority').value = load.priority || 'accessory';
+        document.getElementById('load-switch').value = load.switch_entity || '';
+        document.getElementById('load-power-sensor').value = load.power_sensor || '';
+        document.getElementById('load-max-power').value = load.max_power || 1000;
+      } else {
+        title.textContent = 'Add Load';
+        document.getElementById('load-name').value = '';
+        document.getElementById('load-id').value = '';
+        document.getElementById('load-priority').value = 'accessory';
+        document.getElementById('load-switch').value = '';
+        document.getElementById('load-power-sensor').value = '';
+        document.getElementById('load-max-power').value = 1000;
+      }
+      
+      modal.classList.add('show');
     }
     
-    function addLoad() {
+    function closeLoadModal() {
+      document.getElementById('load-modal').classList.remove('show');
+      editingLoadIndex = -1;
+    }
+    
+    function saveLoad() {
+      const load = {
+        name: document.getElementById('load-name').value,
+        id: document.getElementById('load-id').value || document.getElementById('load-name').value.toLowerCase().replace(/\\s+/g, '_'),
+        priority: document.getElementById('load-priority').value,
+        switch_entity: document.getElementById('load-switch').value,
+        power_sensor: document.getElementById('load-power-sensor').value || undefined,
+        max_power: parseInt(document.getElementById('load-max-power').value) || 1000
+      };
+      
+      if (!load.name) { alert('Please enter a name'); return; }
+      if (!load.switch_entity) { alert('Please enter a switch entity'); return; }
+      
       if (!currentConfig.loads) currentConfig.loads = [];
-      currentConfig.loads.push({ id: '', name: '', priority: 'accessory', switch_entity: '', max_power: 1000 });
+      
+      if (editingLoadIndex >= 0) {
+        currentConfig.loads[editingLoadIndex] = load;
+      } else {
+        currentConfig.loads.push(load);
+      }
+      
       renderLoads(currentConfig.loads);
+      closeLoadModal();
     }
     
     function removeLoad(i) {
-      currentConfig.loads.splice(i, 1);
-      renderLoads(currentConfig.loads);
+      if (confirm('Delete this load?')) {
+        currentConfig.loads.splice(i, 1);
+        renderLoads(currentConfig.loads);
+      }
     }
     
     async function saveConfig() {

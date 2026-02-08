@@ -15,21 +15,75 @@ const HA_URL = SUPERVISOR_TOKEN ? 'http://supervisor/core/api' : 'http://192.168
 const HA_OPTIONS = '/data/options.json';
 const USER_CONFIG = '/data/user-config.json';
 const STATE_FILE = '/data/state.json';
+const HISTORY_FILE = '/data/history.json';
+
+// Debug logs - keep last 200 entries
+let debugLogs = [];
+const MAX_LOGS = 200;
+
+function log(level, msg, data = null) {
+  const entry = { ts: new Date().toISOString(), level, msg, data };
+  debugLogs.push(entry);
+  if (debugLogs.length > MAX_LOGS) debugLogs.shift();
+  const prefix = level === 'error' ? '❌' : level === 'warn' ? '⚠️' : level === 'success' ? '✅' : 'ℹ️';
+  console.log(`${prefix} ${msg}`, data ? JSON.stringify(data) : '');
+}
+
+// History for charts - keep 24h of data (every 5 min = 288 points)
+let history = { soc: [], price: [], pv: [], load: [], grid: [] };
+const MAX_HISTORY = 288;
+
+function loadHistory() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    history = saved;
+    log('info', 'History loaded', { points: history.soc?.length || 0 });
+  } catch (e) {
+    log('info', 'No history file, starting fresh');
+  }
+}
+
+function saveHistory() {
+  try {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history));
+  } catch (e) {
+    log('error', 'Failed to save history', { error: e.message });
+  }
+}
+
+function addHistoryPoint() {
+  const ts = Date.now();
+  history.soc.push({ ts, v: state.battery.soc });
+  history.price.push({ ts, v: state.currentPrice });
+  history.pv.push({ ts, v: state.pv.power });
+  history.load.push({ ts, v: state.load.power });
+  history.grid.push({ ts, v: state.grid.power });
+  
+  // Trim old data
+  for (const key of Object.keys(history)) {
+    if (history[key].length > MAX_HISTORY) {
+      history[key] = history[key].slice(-MAX_HISTORY);
+    }
+  }
+  saveHistory();
+}
+
+loadHistory();
 
 // Load HA addon options as defaults
 let haOptions = {};
 try {
   haOptions = JSON.parse(fs.readFileSync(HA_OPTIONS, 'utf8'));
-  console.log('📋 HA options loaded');
+  log('success', 'HA options loaded');
 } catch (e) {
-  console.log('⚠️ No HA options, using defaults');
+  log('warn', 'No HA options, using defaults');
 }
 
 // Load user config (overrides HA options)
 let userConfig = {};
 try {
   userConfig = JSON.parse(fs.readFileSync(USER_CONFIG, 'utf8'));
-  console.log('📋 User config loaded');
+  log('success', 'User config loaded');
 } catch (e) {}
 
 // Merge configs: user config overrides HA options
@@ -50,9 +104,9 @@ function saveUserConfig(config) {
   userConfig = config;
   try {
     fs.writeFileSync(USER_CONFIG, JSON.stringify(config, null, 2));
-    console.log('💾 User config saved');
+    log('success', 'User config saved');
   } catch (e) {
-    console.error('Error saving config:', e);
+    log('error', 'Error saving config', { error: e.message });
   }
 }
 
@@ -88,7 +142,8 @@ let state = {
   shedLoads: [],
   loads: [],
   lastAction: null,
-  lastCheck: null
+  lastCheck: null,
+  haConnection: { status: 'unknown', lastSuccess: null, lastError: null }
 };
 
 // Load persistent state
@@ -120,8 +175,13 @@ async function haGet(entityId) {
       ? { Authorization: `Bearer ${SUPERVISOR_TOKEN}` }
       : { Authorization: `Bearer ${process.env.HA_TOKEN}` };
     const res = await axios.get(`${HA_URL}/states/${entityId}`, { headers, timeout: 5000 });
+    state.haConnection = { status: 'connected', lastSuccess: new Date().toISOString(), lastError: null };
     return res.data;
-  } catch (e) { return null; }
+  } catch (e) {
+    state.haConnection = { status: 'error', lastSuccess: state.haConnection.lastSuccess, lastError: e.message };
+    log('error', `HA GET failed: ${entityId}`, { error: e.message });
+    return null;
+  }
 }
 
 async function haNum(entityId) {
@@ -135,13 +195,40 @@ async function haCall(domain, service, data) {
       ? { Authorization: `Bearer ${SUPERVISOR_TOKEN}` }
       : { Authorization: `Bearer ${process.env.HA_TOKEN}` };
     await axios.post(`${HA_URL}/services/${domain}/${service}`, data, { headers, timeout: 5000 });
+    log('success', `HA service called: ${domain}.${service}`, data);
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    log('error', `HA service failed: ${domain}.${service}`, { error: e.message });
+    return false;
+  }
 }
 
 const turnOff = (id) => haCall(id.split('.')[0], 'turn_off', { entity_id: id });
 const turnOn = (id) => haCall(id.split('.')[0], 'turn_on', { entity_id: id });
 const setNumber = (id, val) => haCall('number', 'set_value', { entity_id: id, value: val });
+
+// Test an entity - returns detailed info
+async function testEntity(entityId) {
+  if (!entityId) return { ok: false, error: 'No entity ID' };
+  try {
+    const headers = SUPERVISOR_TOKEN 
+      ? { Authorization: `Bearer ${SUPERVISOR_TOKEN}` }
+      : { Authorization: `Bearer ${process.env.HA_TOKEN}` };
+    const start = Date.now();
+    const res = await axios.get(`${HA_URL}/states/${entityId}`, { headers, timeout: 5000 });
+    const latency = Date.now() - start;
+    return { 
+      ok: true, 
+      entity_id: res.data.entity_id,
+      state: res.data.state, 
+      unit: res.data.attributes?.unit_of_measurement,
+      friendly_name: res.data.attributes?.friendly_name,
+      latency 
+    };
+  } catch (e) {
+    return { ok: false, error: e.response?.status === 404 ? 'Entity not found' : e.message };
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logic
@@ -210,6 +297,8 @@ async function applyCharging() {
   state.chargingDecision = decision;
   state.chargingReason = reason;
   
+  log('info', `Charging decision: ${decision}`, { reason, targetSoc, soc: state.battery.soc });
+  
   if (decision === 'charge') {
     const c = ctrl();
     if (c.program_1_soc) await setNumber(c.program_1_soc, targetSoc);
@@ -225,6 +314,8 @@ async function updateState() {
   config = getConfig();
   const s = sens();
   const i = inv();
+  
+  log('info', 'Updating state...');
   
   const [soc, batPower, gridPower, loadPower, pvPower] = await Promise.all([
     haNum(s.battery_soc), haNum(s.battery_power), haNum(s.grid_power), haNum(s.load_power), haNum(s.pv_power)
@@ -266,6 +357,8 @@ async function updateState() {
   
   decideCharging();
   state.lastCheck = new Date().toISOString();
+  
+  log('success', 'State updated', { soc, price: state.currentPrice, period: state.currentPeriod });
 }
 
 async function balanceLoads() {
@@ -275,6 +368,7 @@ async function balanceLoads() {
   
   if (state.isOverloaded) {
     const excess = state.load.power - state.maxAvailable;
+    log('warn', 'Overload detected', { excess, load: state.load.power, max: state.maxAvailable });
     let saved = 0;
     for (const priority of ['accessory', 'comfort']) {
       if (saved >= excess) break;
@@ -285,6 +379,7 @@ async function balanceLoads() {
           saved += load.current_power || load.max_power || 1000;
           state.shedLoads.push(load.id);
           actions.push(`⬇️ ${load.name} off`);
+          log('warn', `Shed load: ${load.name}`, { saved, excess });
         }
       }
     }
@@ -297,6 +392,7 @@ async function balanceLoads() {
         if (await turnOn(load.switch_entity)) {
           state.shedLoads = state.shedLoads.filter(i => i !== id);
           actions.push(`⬆️ ${load.name} on`);
+          log('success', `Restored load: ${load.name}`);
         }
       }
     }
@@ -314,11 +410,12 @@ const html = `<!DOCTYPE html>
 <head>
   <title>Volt Load Manager</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1117; color: #e6edf3; padding: 16px; max-width: 900px; margin: 0 auto; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1117; color: #e6edf3; padding: 16px; max-width: 1000px; margin: 0 auto; }
     h1 { font-size: 20px; margin-bottom: 16px; }
-    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
     .tab { padding: 10px 20px; background: #21262d; border: none; color: #e6edf3; border-radius: 8px; cursor: pointer; font-size: 14px; }
     .tab.active { background: #238636; }
     .panel { display: none; }
@@ -349,6 +446,7 @@ const html = `<!DOCTYPE html>
     .target-control button.clear { background: #6e7681; }
     .btn { background: #238636; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; margin-right: 8px; margin-top: 8px; }
     .btn.secondary { background: #6e7681; }
+    .btn.danger { background: #f85149; }
     .load { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #30363d; }
     .load:last-child { border: none; }
     .badge { font-size: 10px; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; font-weight: 600; }
@@ -396,6 +494,38 @@ const html = `<!DOCTYPE html>
     .modal-actions .cancel-btn { background: #30363d; color: #e6edf3; }
     .modal-actions .cancel-btn:hover { background: #484f58; }
     .empty-state { text-align: center; padding: 32px; color: #8b949e; }
+    
+    /* Debug styles */
+    .debug-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .debug-info .item { background: #21262d; padding: 12px; border-radius: 8px; }
+    .debug-info .item .label { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+    .debug-info .item .value { font-size: 16px; font-weight: 600; margin-top: 4px; }
+    .log-container { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; max-height: 400px; overflow-y: auto; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; }
+    .log-entry { padding: 6px 0; border-bottom: 1px solid #21262d; display: flex; gap: 8px; }
+    .log-entry:last-child { border: none; }
+    .log-entry .ts { color: #6e7681; min-width: 85px; }
+    .log-entry .level { min-width: 20px; }
+    .log-entry .msg { flex: 1; word-break: break-word; }
+    .log-entry.error .msg { color: #f85149; }
+    .log-entry.warn .msg { color: #d29922; }
+    .log-entry.success .msg { color: #3fb950; }
+    .entity-test { margin-top: 16px; }
+    .entity-test .result { margin-top: 8px; padding: 12px; background: #21262d; border-radius: 8px; font-family: monospace; font-size: 12px; }
+    .entity-test .result.ok { border-left: 3px solid #3fb950; }
+    .entity-test .result.error { border-left: 3px solid #f85149; }
+    .entity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+    .entity-item { background: #21262d; padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+    .entity-item .name { font-size: 12px; color: #8b949e; }
+    .entity-item .id { font-family: monospace; font-size: 11px; margin-top: 2px; }
+    .entity-item .status { font-size: 12px; font-weight: 600; }
+    .entity-item .status.ok { color: #3fb950; }
+    .entity-item .status.error { color: #f85149; }
+    .entity-item .status.pending { color: #6e7681; }
+    
+    /* Chart styles */
+    .chart-container { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .chart-container h3 { font-size: 14px; margin-bottom: 12px; }
+    .chart-wrapper { height: 200px; }
   </style>
 </head>
 <body>
@@ -403,9 +533,12 @@ const html = `<!DOCTYPE html>
   
   <div class="tabs">
     <button class="tab active" onclick="showPanel('status')">Status</button>
-    <button class="tab" onclick="showPanel('config')">Configuration</button>
+    <button class="tab" onclick="showPanel('charts')">📊 Charts</button>
+    <button class="tab" onclick="showPanel('config')">⚙️ Config</button>
+    <button class="tab" onclick="showPanel('debug')">🐛 Debug</button>
   </div>
   
+  <!-- STATUS PANEL -->
   <div id="status-panel" class="panel active">
     <div class="card wide">
       <h2>🔋 Battery</h2>
@@ -456,6 +589,24 @@ const html = `<!DOCTYPE html>
     </div>
   </div>
   
+  <!-- CHARTS PANEL -->
+  <div id="charts-panel" class="panel">
+    <div class="chart-container">
+      <h3>🔋 Battery SOC (Last 24h)</h3>
+      <div class="chart-wrapper"><canvas id="chart-soc"></canvas></div>
+    </div>
+    <div class="chart-container">
+      <h3>💶 PVPC Price (Last 24h)</h3>
+      <div class="chart-wrapper"><canvas id="chart-price"></canvas></div>
+    </div>
+    <div class="chart-container">
+      <h3>⚡ Power Flow (Last 24h)</h3>
+      <div class="chart-wrapper"><canvas id="chart-power"></canvas></div>
+    </div>
+    <button class="btn" onclick="loadCharts()">🔄 Refresh Charts</button>
+  </div>
+  
+  <!-- CONFIG PANEL -->
   <div id="config-panel" class="panel">
     <div class="card wide">
       <div class="section">
@@ -582,6 +733,52 @@ const html = `<!DOCTYPE html>
     </div>
   </div>
   
+  <!-- DEBUG PANEL -->
+  <div id="debug-panel" class="panel">
+    <div class="card wide">
+      <h2>🔗 Connection Status</h2>
+      <div class="debug-info">
+        <div class="item">
+          <div class="label">HA Connection</div>
+          <div class="value" id="dbg-ha-status">--</div>
+        </div>
+        <div class="item">
+          <div class="label">Last Success</div>
+          <div class="value" id="dbg-ha-last-ok">--</div>
+        </div>
+        <div class="item">
+          <div class="label">Last Error</div>
+          <div class="value" id="dbg-ha-last-err">--</div>
+        </div>
+        <div class="item">
+          <div class="label">HA URL</div>
+          <div class="value" id="dbg-ha-url">--</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>🧪 Entity Tests</h2>
+      <p class="sub">Test if configured sensors are responding correctly</p>
+      <button class="btn" onclick="testAllEntities()">🔍 Test All Entities</button>
+      <button class="btn secondary" onclick="clearEntityTests()">Clear</button>
+      <div id="entity-tests" class="entity-grid"></div>
+    </div>
+    
+    <div class="card wide">
+      <h2>📊 Internal State</h2>
+      <button class="btn" onclick="loadDebugState()">🔄 Refresh State</button>
+      <pre id="debug-state" style="margin-top:12px;background:#21262d;padding:12px;border-radius:8px;font-size:11px;overflow-x:auto;max-height:300px;overflow-y:auto;">--</pre>
+    </div>
+    
+    <div class="card wide">
+      <h2>📜 Recent Logs</h2>
+      <button class="btn" onclick="loadLogs()">🔄 Refresh</button>
+      <button class="btn danger" onclick="clearLogs()">🗑️ Clear</button>
+      <div id="logs" class="log-container" style="margin-top:12px;">--</div>
+    </div>
+  </div>
+  
   <!-- Load Modal -->
   <div id="load-modal" class="modal-overlay" onclick="if(event.target===this)closeLoadModal()">
     <div class="modal">
@@ -629,6 +826,7 @@ const html = `<!DOCTYPE html>
   <script>
     const base = window.location.pathname.replace(/\\/$/, '');
     let currentConfig = {};
+    let charts = {};
     
     function showPanel(name) {
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -636,7 +834,13 @@ const html = `<!DOCTYPE html>
       document.getElementById(name + '-panel').classList.add('active');
       event.target.classList.add('active');
       if (name === 'config') loadConfig();
+      if (name === 'debug') { loadDebug(); loadLogs(); }
+      if (name === 'charts') loadCharts();
     }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // STATUS
+    // ─────────────────────────────────────────────────────────────────────────
     
     async function refresh() {
       try {
@@ -675,6 +879,145 @@ const html = `<!DOCTYPE html>
         ).join('') : '<p style="color:#8b949e">No loads configured. Go to Configuration tab to add loads.</p>';
       } catch (e) { console.error(e); }
     }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // CHARTS
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    async function loadCharts() {
+      try {
+        const res = await fetch(base + '/api/history');
+        const data = await res.json();
+        
+        const chartOpts = {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: true, labels: { color: '#8b949e' } } },
+          scales: {
+            x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, grid: { color: '#30363d' }, ticks: { color: '#8b949e' } },
+            y: { grid: { color: '#30363d' }, ticks: { color: '#8b949e' } }
+          }
+        };
+        
+        // SOC Chart
+        if (charts.soc) charts.soc.destroy();
+        charts.soc = new Chart(document.getElementById('chart-soc'), {
+          type: 'line',
+          data: {
+            datasets: [{
+              label: 'SOC %',
+              data: data.soc.map(p => ({ x: p.ts, y: p.v })),
+              borderColor: '#3fb950',
+              backgroundColor: '#3fb95022',
+              fill: true,
+              tension: 0.3
+            }]
+          },
+          options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, min: 0, max: 100 } } }
+        });
+        
+        // Price Chart
+        if (charts.price) charts.price.destroy();
+        charts.price = new Chart(document.getElementById('chart-price'), {
+          type: 'line',
+          data: {
+            datasets: [{
+              label: '€/kWh',
+              data: data.price.filter(p => p.v !== null).map(p => ({ x: p.ts, y: p.v })),
+              borderColor: '#d29922',
+              backgroundColor: '#d2992222',
+              fill: true,
+              tension: 0.1,
+              stepped: 'before'
+            }]
+          },
+          options: chartOpts
+        });
+        
+        // Power Chart
+        if (charts.power) charts.power.destroy();
+        charts.power = new Chart(document.getElementById('chart-power'), {
+          type: 'line',
+          data: {
+            datasets: [
+              { label: 'Solar', data: data.pv.map(p => ({ x: p.ts, y: p.v })), borderColor: '#f0883e', tension: 0.3 },
+              { label: 'Load', data: data.load.map(p => ({ x: p.ts, y: p.v })), borderColor: '#a371f7', tension: 0.3 },
+              { label: 'Grid', data: data.grid.map(p => ({ x: p.ts, y: p.v })), borderColor: '#58a6ff', tension: 0.3 }
+            ]
+          },
+          options: chartOpts
+        });
+      } catch (e) {
+        console.error('Failed to load charts:', e);
+      }
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // DEBUG
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    async function loadDebug() {
+      const res = await fetch(base + '/api/debug');
+      const d = await res.json();
+      
+      document.getElementById('dbg-ha-status').innerHTML = d.haConnection.status === 'connected' 
+        ? '<span class="ok">✅ Connected</span>' 
+        : '<span class="danger">❌ ' + d.haConnection.status + '</span>';
+      document.getElementById('dbg-ha-last-ok').textContent = d.haConnection.lastSuccess ? new Date(d.haConnection.lastSuccess).toLocaleTimeString() : '--';
+      document.getElementById('dbg-ha-last-err').textContent = d.haConnection.lastError || '--';
+      document.getElementById('dbg-ha-url').textContent = d.haUrl;
+    }
+    
+    async function loadDebugState() {
+      const res = await fetch(base + '/api/status');
+      const d = await res.json();
+      document.getElementById('debug-state').textContent = JSON.stringify(d, null, 2);
+    }
+    
+    async function loadLogs() {
+      const res = await fetch(base + '/api/logs');
+      const logs = await res.json();
+      document.getElementById('logs').innerHTML = logs.length ? logs.slice().reverse().map(l => 
+        '<div class="log-entry ' + l.level + '">' +
+          '<span class="ts">' + new Date(l.ts).toLocaleTimeString() + '</span>' +
+          '<span class="level">' + (l.level === 'error' ? '❌' : l.level === 'warn' ? '⚠️' : l.level === 'success' ? '✅' : 'ℹ️') + '</span>' +
+          '<span class="msg">' + l.msg + (l.data ? ' <code>' + JSON.stringify(l.data) + '</code>' : '') + '</span>' +
+        '</div>'
+      ).join('') : '<p style="color:#8b949e;padding:12px">No logs yet</p>';
+    }
+    
+    async function clearLogs() {
+      await fetch(base + '/api/logs', { method: 'DELETE' });
+      loadLogs();
+    }
+    
+    async function testAllEntities() {
+      const container = document.getElementById('entity-tests');
+      container.innerHTML = '<div style="color:#8b949e;padding:12px">Testing entities...</div>';
+      
+      const res = await fetch(base + '/api/test-entities');
+      const results = await res.json();
+      
+      container.innerHTML = results.map(r => 
+        '<div class="entity-item">' +
+          '<div>' +
+            '<div class="name">' + r.name + '</div>' +
+            '<div class="id">' + r.entity_id + '</div>' +
+          '</div>' +
+          '<div class="status ' + (r.ok ? 'ok' : 'error') + '">' +
+            (r.ok ? r.state + (r.unit ? ' ' + r.unit : '') + ' (' + r.latency + 'ms)' : r.error) +
+          '</div>' +
+        '</div>'
+      ).join('');
+    }
+    
+    function clearEntityTests() {
+      document.getElementById('entity-tests').innerHTML = '';
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIG
+    // ─────────────────────────────────────────────────────────────────────────
     
     async function loadConfig() {
       const res = await fetch(base + '/api/config');
@@ -828,6 +1171,10 @@ const html = `<!DOCTYPE html>
       alert('Configuration saved!');
     }
     
+    // ─────────────────────────────────────────────────────────────────────────
+    // ACTIONS
+    // ─────────────────────────────────────────────────────────────────────────
+    
     async function setTarget() {
       const val = parseInt(document.getElementById('manualTarget').value);
       if (val >= 10 && val <= 100) {
@@ -910,6 +1257,45 @@ const server = http.createServer(async (req, res) => {
       state.shedLoads = [];
       saveState();
       res.end(JSON.stringify({ success: true }));
+    } else if (path === '/api/debug') {
+      res.end(JSON.stringify({
+        haConnection: state.haConnection,
+        haUrl: HA_URL,
+        supervisorToken: !!SUPERVISOR_TOKEN,
+        config: getConfig()
+      }));
+    } else if (path === '/api/logs') {
+      if (req.method === 'DELETE') {
+        debugLogs = [];
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        res.end(JSON.stringify(debugLogs));
+      }
+    } else if (path === '/api/history') {
+      res.end(JSON.stringify(history));
+    } else if (path === '/api/test-entities') {
+      const cfg = getConfig();
+      const tests = [];
+      const sensorsToTest = [
+        { name: 'Battery SOC', entity_id: cfg.sensors?.battery_soc },
+        { name: 'Battery Power', entity_id: cfg.sensors?.battery_power },
+        { name: 'Grid Power', entity_id: cfg.sensors?.grid_power },
+        { name: 'Load Power', entity_id: cfg.sensors?.load_power },
+        { name: 'Solar Power', entity_id: cfg.sensors?.pv_power },
+        { name: 'PVPC Price', entity_id: cfg.sensors?.pvpc_price },
+        { name: 'Tariff Period', entity_id: cfg.sensors?.tariff_period },
+        { name: 'Program 1 SOC', entity_id: cfg.controls?.program_1_soc },
+        { name: 'Grid Charge Start', entity_id: cfg.controls?.grid_charge_start_soc }
+      ];
+      
+      for (const s of sensorsToTest) {
+        if (s.entity_id) {
+          const result = await testEntity(s.entity_id);
+          tests.push({ name: s.name, entity_id: s.entity_id, ...result });
+        }
+      }
+      
+      res.end(JSON.stringify(tests));
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -922,7 +1308,16 @@ const server = http.createServer(async (req, res) => {
 
 // Auto tasks
 setInterval(() => balanceLoads(), 30000);
-setInterval(() => applyCharging(), 300000);
-setTimeout(() => applyCharging(), 5000);
+setInterval(() => {
+  applyCharging();
+  addHistoryPoint();
+}, 300000); // 5 min
+setTimeout(() => { 
+  applyCharging(); 
+  addHistoryPoint();
+}, 5000);
 
-server.listen(8099, () => console.log('⚡ Volt Load Manager on :8099'));
+server.listen(8099, () => {
+  log('success', 'Volt Load Manager started on :8099');
+  console.log('⚡ Volt Load Manager on :8099');
+});

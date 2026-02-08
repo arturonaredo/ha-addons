@@ -546,6 +546,7 @@ const html = `<!DOCTYPE html>
     <button class="tab active" onclick="showPanel('status')">Status</button>
     <button class="tab" onclick="showPanel('forecast')">🔮 Forecast</button>
     <button class="tab" onclick="showPanel('ev')">🚗 EV</button>
+    <button class="tab" onclick="showPanel('stats')">📈 Stats</button>
     <button class="tab" onclick="showPanel('charts')">📊 Charts</button>
     <button class="tab" onclick="showPanel('config')">⚙️ Config</button>
     <button class="tab" onclick="showPanel('debug')">🐛 Debug</button>
@@ -743,6 +744,78 @@ const html = `<!DOCTYPE html>
     <button class="btn" onclick="loadEV()">🔄 Refresh</button>
     <button class="btn secondary" onclick="startEVCharge()">⚡ Start Charging Now</button>
     <button class="btn secondary" onclick="stopEVCharge()">⏹️ Stop Charging</button>
+  </div>
+  
+  <!-- STATS PANEL -->
+  <div id="stats-panel" class="panel">
+    <div class="grid">
+      <div class="card">
+        <h2>🔋 SOC Range</h2>
+        <div class="big" id="st-soc-range">--</div>
+        <div class="sub">Min - Max today</div>
+      </div>
+      <div class="card">
+        <h2>☀️ Solar</h2>
+        <div class="big ok" id="st-solar">--<span class="unit">kWh</span></div>
+        <div class="sub">Generated today</div>
+      </div>
+      <div class="card">
+        <h2>⬇️ Grid Import</h2>
+        <div class="big warn" id="st-import">--<span class="unit">kWh</span></div>
+        <div class="sub">From grid today</div>
+      </div>
+      <div class="card">
+        <h2>⬆️ Grid Export</h2>
+        <div class="big ok" id="st-export">--<span class="unit">kWh</span></div>
+        <div class="sub">To grid today</div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>📊 Today's Summary</h2>
+      <div style="margin-top:16px;">
+        <div class="row"><span>Data Points</span><span id="st-points">--</span></div>
+        <div class="row"><span>Average Load</span><span id="st-avg-load">-- W</span></div>
+        <div class="row"><span>Peak Load</span><span id="st-peak-load">-- W</span></div>
+        <div class="row"><span>Average Price</span><span id="st-avg-price">-- €/kWh</span></div>
+        <div class="row"><span>Price Range</span><span id="st-price-range">--</span></div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>⚡ Power Summary</h2>
+      <div class="grid" style="margin-top:16px;">
+        <div style="text-align:center;padding:16px;background:#21262d;border-radius:8px;">
+          <div style="font-size:11px;color:#8b949e;text-transform:uppercase;">Current SOC</div>
+          <div style="font-size:32px;font-weight:700;color:#3fb950;" id="st-current-soc">--%</div>
+        </div>
+        <div style="text-align:center;padding:16px;background:#21262d;border-radius:8px;">
+          <div style="font-size:11px;color:#8b949e;text-transform:uppercase;">Target SOC</div>
+          <div style="font-size:32px;font-weight:700;color:#58a6ff;" id="st-target-soc">--%</div>
+        </div>
+        <div style="text-align:center;padding:16px;background:#21262d;border-radius:8px;">
+          <div style="font-size:11px;color:#8b949e;text-transform:uppercase;">Battery kWh</div>
+          <div style="font-size:32px;font-weight:700;" id="st-battery-kwh">--</div>
+        </div>
+        <div style="text-align:center;padding:16px;background:#21262d;border-radius:8px;">
+          <div style="font-size:11px;color:#8b949e;text-transform:uppercase;">Capacity</div>
+          <div style="font-size:32px;font-weight:700;color:#8b949e;" id="st-capacity">-- kWh</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>🔮 Forecast Summary</h2>
+      <div style="margin-top:16px;">
+        <div class="row"><span>Solar Today</span><span id="st-fc-solar-today">-- kWh</span></div>
+        <div class="row"><span>Solar Tomorrow</span><span id="st-fc-solar-tomorrow">-- kWh</span></div>
+        <div class="row"><span>Cheapest Hours</span><span id="st-fc-cheap">--</span></div>
+        <div class="row"><span>Expensive Hours</span><span id="st-fc-expensive">--</span></div>
+        <div class="row"><span>Tomorrow Prices Available</span><span id="st-fc-tomorrow">--</span></div>
+      </div>
+    </div>
+    
+    <button class="btn" onclick="loadStats()">🔄 Refresh Stats</button>
   </div>
   
   <!-- CONFIG PANEL -->
@@ -977,6 +1050,7 @@ const html = `<!DOCTYPE html>
       if (name === 'charts') loadCharts();
       if (name === 'forecast') loadForecast();
       if (name === 'ev') loadEV();
+      if (name === 'stats') loadStats();
     }
     
     // ─────────────────────────────────────────────────────────────────────────
@@ -1243,6 +1317,49 @@ const html = `<!DOCTYPE html>
     async function stopEVCharge() {
       // This would call HA to stop the charger - placeholder for now  
       alert('Stop EV Charge - Configure your charger switch in loads');
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // STATS
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    async function loadStats() {
+      try {
+        // Get daily stats
+        const dailyRes = await fetch(base + '/api/stats/daily');
+        const daily = await dailyRes.json();
+        
+        if (daily.success) {
+          document.getElementById('st-soc-range').textContent = daily.soc.min + '% - ' + daily.soc.max + '%';
+          document.getElementById('st-solar').innerHTML = (daily.solar.total / 1000).toFixed(1) + '<span class="unit">kWh</span>';
+          document.getElementById('st-import').innerHTML = (daily.grid.import / 1000).toFixed(1) + '<span class="unit">kWh</span>';
+          document.getElementById('st-export').innerHTML = (daily.grid.export / 1000).toFixed(1) + '<span class="unit">kWh</span>';
+          document.getElementById('st-points').textContent = daily.dataPoints;
+          document.getElementById('st-avg-load').textContent = daily.load.avg + ' W';
+          document.getElementById('st-peak-load').textContent = daily.load.max + ' W';
+          document.getElementById('st-avg-price').textContent = (daily.price.avg * 100).toFixed(2) + ' ¢/kWh';
+          document.getElementById('st-price-range').textContent = (daily.price.min * 100).toFixed(2) + ' - ' + (daily.price.max * 100).toFixed(2) + ' ¢';
+        }
+        
+        // Get summary
+        const summaryRes = await fetch(base + '/api/stats/summary');
+        const summary = await summaryRes.json();
+        
+        if (summary.success) {
+          document.getElementById('st-current-soc').textContent = summary.battery.soc + '%';
+          document.getElementById('st-target-soc').textContent = summary.battery.target + '%';
+          document.getElementById('st-battery-kwh').textContent = summary.battery.kwh.toFixed(1);
+          document.getElementById('st-capacity').textContent = summary.battery.capacity + ' kWh';
+          
+          document.getElementById('st-fc-solar-today').textContent = summary.forecast.solarTodayKwh + ' kWh';
+          document.getElementById('st-fc-solar-tomorrow').textContent = summary.forecast.solarTomorrowKwh + ' kWh';
+          document.getElementById('st-fc-cheap').textContent = summary.forecast.cheapestHours.slice(0, 4).map(h => h + ':00').join(', ') || '--';
+          document.getElementById('st-fc-expensive').textContent = summary.forecast.expensiveHours.slice(0, 4).map(h => h + ':00').join(', ') || '--';
+          document.getElementById('st-fc-tomorrow').textContent = summary.forecast.tomorrowAvailable ? '✅ Yes' : '❌ Not yet';
+        }
+      } catch (e) {
+        console.error('Stats error:', e);
+      }
     }
     
     // ─────────────────────────────────────────────────────────────────────────

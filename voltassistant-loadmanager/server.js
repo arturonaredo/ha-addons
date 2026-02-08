@@ -2115,6 +2115,24 @@ const html = `<!DOCTYPE html>
     
     refresh();
     setInterval(refresh, 5000);
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      
+      switch(e.key) {
+        case '1': showTab('overview'); break;
+        case '2': showTab('forecast'); break;
+        case '3': showTab('ev'); break;
+        case '4': showTab('stats'); break;
+        case '5': showTab('charts'); break;
+        case '6': showTab('config'); break;
+        case '7': showTab('debug'); break;
+        case 'r': case 'R': refresh(); break;
+        case 'a': case 'A': if (e.ctrlKey) { quickAction('auto'); e.preventDefault(); } break;
+        case 'c': case 'C': if (e.ctrlKey) { quickAction('charge_100'); e.preventDefault(); } break;
+      }
+    });
   </script>
   
   <footer style="margin-top:32px;padding:24px;text-align:center;border-top:1px solid #30363d;color:#8b949e;font-size:12px;">

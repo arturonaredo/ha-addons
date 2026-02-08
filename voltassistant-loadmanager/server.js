@@ -682,6 +682,7 @@ const html = `<!DOCTYPE html>
       <div class="row"><span>PVPC Price</span><span id="price">--</span></div>
       <div class="row"><span>Contracted Power</span><span id="contracted">--</span></div>
       <div class="row"><span>Current Usage</span><span id="usage">--</span></div>
+      <div class="row"><span>Next Period</span><span id="next-period">--</span></div>
     </div>
     
     <div class="grid">
@@ -1313,6 +1314,36 @@ const html = `<!DOCTYPE html>
         document.getElementById('chargingReason').textContent = d.chargingReason;
         
         ['valle','llano','punta'].forEach(p => document.getElementById('p-'+p).classList.toggle('active', d.currentPeriod === p));
+        
+        // Calculate next period change
+        const now = new Date();
+        const hour = now.getHours();
+        const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+        let nextChange, nextPeriod;
+        
+        if (isWeekend) {
+          nextChange = 'Weekends are Valle all day';
+          nextPeriod = '';
+        } else if (hour < 8) {
+          nextChange = '08:00';
+          nextPeriod = 'Llano';
+        } else if (hour < 10) {
+          nextChange = '10:00';
+          nextPeriod = 'Punta';
+        } else if (hour < 14) {
+          nextChange = '14:00';
+          nextPeriod = 'Llano';
+        } else if (hour < 18) {
+          nextChange = '18:00';
+          nextPeriod = 'Punta';
+        } else if (hour < 22) {
+          nextChange = '22:00';
+          nextPeriod = 'Llano';
+        } else {
+          nextChange = '00:00';
+          nextPeriod = 'Valle';
+        }
+        document.getElementById('next-period').innerHTML = nextPeriod ? nextChange + ' → <strong>' + nextPeriod + '</strong>' : nextChange;
         document.getElementById('price').textContent = d.currentPrice !== null ? d.currentPrice.toFixed(3) + ' €/kWh' : '--';
         document.getElementById('contracted').textContent = (d.contractedPower/1000).toFixed(2) + ' kW';
         document.getElementById('usage').innerHTML = (d.load.power/1000).toFixed(2) + ' kW (' + d.usagePercent.toFixed(0) + '%)';

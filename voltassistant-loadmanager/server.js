@@ -1887,6 +1887,18 @@ const html = `<!DOCTYPE html>
     refresh();
     setInterval(refresh, 5000);
   </script>
+  
+  <footer style="margin-top:32px;padding:24px;text-align:center;border-top:1px solid #30363d;color:#8b949e;font-size:12px;">
+    <div style="margin-bottom:8px;">
+      ⚡ <strong>VoltAssistant</strong> v1.3.0 · Smart Battery & Load Management
+    </div>
+    <div>
+      <a href="/health" style="color:#3fb950;text-decoration:none;margin:0 8px;">Health</a>
+      <a href="/metrics" style="color:#3fb950;text-decoration:none;margin:0 8px;">Metrics</a>
+      <a href="/api/report/daily" style="color:#3fb950;text-decoration:none;margin:0 8px;">Daily Report</a>
+      <a href="https://github.com/arturonaredo/ha-addons" style="color:#3fb950;text-decoration:none;margin:0 8px;" target="_blank">GitHub</a>
+    </div>
+  </footer>
 </body>
 </html>`;
 

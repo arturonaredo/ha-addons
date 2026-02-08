@@ -856,6 +856,7 @@ const html = `<!DOCTYPE html>
         <h2>☀️ Solar Today</h2>
         <div class="big" id="fc-solar-today">--<span class="unit">kWh</span></div>
         <div class="sub">Peak: <span id="fc-solar-peak">--</span>W at <span id="fc-solar-peak-hour">--</span>:00</div>
+        <div class="sub" style="margin-top:4px;font-size:11px;color:#8b949e;">🌅 <span id="fc-sunrise">--</span> - 🌆 <span id="fc-sunset">--</span></div>
       </div>
       <div class="card">
         <h2>☀️ Solar Tomorrow</h2>
@@ -1862,6 +1863,13 @@ const html = `<!DOCTYPE html>
           document.getElementById('fc-solar-today').innerHTML = (d.solar.today.totalKwh || 0) + '<span class="unit">kWh</span>';
           document.getElementById('fc-solar-peak').textContent = d.solar.today.peakWatts || '--';
           document.getElementById('fc-solar-peak-hour').textContent = d.solar.today.peakHour ?? '--';
+          
+          // Calculate approximate sunrise/sunset based on solar data
+          const forecasts = d.solar.today.forecasts || [];
+          const firstSolar = forecasts.find(f => f.watts > 50);
+          const lastSolar = [...forecasts].reverse().find(f => f.watts > 50);
+          document.getElementById('fc-sunrise').textContent = firstSolar ? (firstSolar.hour + ':00') : '07:00';
+          document.getElementById('fc-sunset').textContent = lastSolar ? (lastSolar.hour + ':00') : '19:00';
         }
         if (d.solar?.tomorrow) {
           document.getElementById('fc-solar-tomorrow').innerHTML = (d.solar.tomorrow.totalKwh || 0) + '<span class="unit">kWh</span>';

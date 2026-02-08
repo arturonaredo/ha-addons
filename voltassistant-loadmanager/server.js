@@ -1945,6 +1945,95 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: e.message }));
       }
     
+    // ═══════════════════════════════════════════════════════════════════════
+    // STATISTICS ENDPOINTS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    } else if (path === '/api/stats/daily') {
+      // Daily statistics from history
+      const today = new Date().toISOString().split('T')[0];
+      const todayStart = new Date(today + 'T00:00:00').getTime();
+      
+      const todayData = {
+        soc: history.soc.filter(p => p.ts >= todayStart),
+        price: history.price.filter(p => p.ts >= todayStart),
+        pv: history.pv.filter(p => p.ts >= todayStart),
+        load: history.load.filter(p => p.ts >= todayStart),
+        grid: history.grid.filter(p => p.ts >= todayStart)
+      };
+      
+      const calcStats = (arr) => {
+        if (!arr.length) return { min: 0, max: 0, avg: 0, total: 0 };
+        const values = arr.map(p => p.v || 0);
+        return {
+          min: Math.min(...values),
+          max: Math.max(...values),
+          avg: Math.round(values.reduce((a, b) => a + b, 0) / values.length * 100) / 100,
+          total: Math.round(values.reduce((a, b) => a + b, 0) / 12) // Rough kWh (5min intervals)
+        };
+      };
+      
+      res.end(JSON.stringify({
+        success: true,
+        date: today,
+        dataPoints: todayData.soc.length,
+        soc: { min: calcStats(todayData.soc).min, max: calcStats(todayData.soc).max, current: state.battery.soc },
+        solar: { ...calcStats(todayData.pv), unit: 'Wh' },
+        load: { ...calcStats(todayData.load), unit: 'Wh' },
+        grid: {
+          import: Math.round(todayData.grid.filter(p => p.v > 0).reduce((s, p) => s + p.v, 0) / 12),
+          export: Math.round(Math.abs(todayData.grid.filter(p => p.v < 0).reduce((s, p) => s + p.v, 0)) / 12)
+        },
+        price: { ...calcStats(todayData.price), unit: '€/kWh' }
+      }));
+    
+    } else if (path === '/api/stats/summary') {
+      // Summary with key metrics
+      const prices = await getPVPCPrices();
+      const solar = await getSolarForecast();
+      const hour = new Date().getHours();
+      
+      res.end(JSON.stringify({
+        success: true,
+        timestamp: new Date().toISOString(),
+        battery: {
+          soc: state.battery.soc,
+          kwh: state.battery.kwh,
+          capacity: state.battery.capacity,
+          target: state.effectiveTargetSoc,
+          isManual: state.manualTargetSoc !== null
+        },
+        power: {
+          solar: state.pv.power,
+          load: state.load.power,
+          grid: state.grid.power,
+          battery: state.battery.power
+        },
+        tariff: {
+          period: state.currentPeriod,
+          price: state.currentPrice,
+          contractedPower: state.contractedPower
+        },
+        forecast: {
+          solarTodayKwh: solar.today?.totalKwh || 0,
+          solarTomorrowKwh: solar.tomorrow?.totalKwh || 0,
+          cheapestHours: prices.today?.stats?.cheapest || [],
+          expensiveHours: prices.today?.stats?.expensive || [],
+          tomorrowAvailable: prices.tomorrow?.available || false
+        },
+        loads: {
+          total: state.loads.length,
+          shedCount: state.shedLoads.length,
+          isOverloaded: state.isOverloaded,
+          usagePercent: state.usagePercent
+        },
+        ev: {
+          enabled: config.ev_charging?.enabled || false,
+          soc: state.carSoc,
+          chargingSlot: state.carChargingSlot
+        }
+      }));
+    
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'Not found' }));

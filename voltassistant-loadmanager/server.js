@@ -689,7 +689,7 @@ const html = `<!DOCTYPE html>
       <div class="card"><h2>☀️ Solar</h2><div class="big" id="pv">--<span class="unit">W</span></div></div>
       <div class="card"><h2>🏠 Load</h2><div class="big" id="load">--<span class="unit">W</span></div></div>
       <div class="card"><h2>⚡ Grid</h2><div class="big" id="grid">--<span class="unit">W</span></div><div class="sub" id="gridDir">--</div></div>
-      <div class="card"><h2>Status</h2><div class="big" id="status">--</div></div>
+      <div class="card"><h2>System</h2><div class="big" id="status">--</div><div class="sub" id="health-detail">--</div></div>
     </div>
     
     <div class="card wide">
@@ -1353,7 +1353,20 @@ const html = `<!DOCTYPE html>
         document.getElementById('grid').innerHTML = Math.abs(d.grid.power).toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('gridDir').textContent = d.grid.power > 50 ? '← Import' : d.grid.power < -50 ? '→ Export' : '≈ Balanced';
         
-        document.getElementById('status').innerHTML = '<span class="' + (d.isOverloaded ? 'danger' : 'ok') + '">' + (d.isOverloaded ? '⚠️ Overload' : '✅ OK') + '</span>';
+        // System health
+        const issues = [];
+        if (d.isOverloaded) issues.push('⚠️ Overload');
+        if (d.battery.soc < 15) issues.push('🔴 Low SOC');
+        if (!d.haConnection || d.haConnection.status !== 'connected') issues.push('❌ HA Offline');
+        if (d.shedLoads?.length > 0) issues.push('🔌 Loads shed');
+        
+        if (issues.length === 0) {
+          document.getElementById('status').innerHTML = '<span class="ok">✅ All OK</span>';
+          document.getElementById('health-detail').textContent = 'System healthy';
+        } else {
+          document.getElementById('status').innerHTML = '<span class="danger">' + issues[0] + '</span>';
+          document.getElementById('health-detail').textContent = issues.length > 1 ? '+' + (issues.length - 1) + ' more issues' : '';
+        }
         
         document.getElementById('loads').innerHTML = d.loads.length ? d.loads.map(l =>
           '<div class="load' + (d.shedLoads.includes(l.id) ? ' shed' : '') + '">' +

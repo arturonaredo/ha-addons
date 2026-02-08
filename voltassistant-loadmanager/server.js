@@ -452,6 +452,46 @@ function checkAlerts() {
   return newAlerts;
 }
 
+async function sendTestNotification() {
+  const notify = config.notifications || {};
+  if (!notify.enabled || !notify.webhook_url) {
+    return { success: false, error: 'Notifications not configured' };
+  }
+  
+  try {
+    const payload = {
+      title: '🧪 VoltAssistant Test',
+      message: 'This is a test notification from VoltAssistant',
+      type: 'test',
+      severity: 'info',
+      timestamp: new Date().toISOString(),
+      state: {
+        soc: state.battery.soc || 0,
+        price: state.currentPrice || 0,
+        period: state.currentPeriod || 'unknown'
+      }
+    };
+    
+    const res = await fetch(notify.webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (res.ok) {
+      log('success', 'Test notification sent');
+      return { success: true };
+    } else {
+      const error = 'HTTP ' + res.status;
+      log('error', 'Test notification failed: ' + error);
+      return { success: false, error };
+    }
+  } catch (e) {
+    log('error', 'Test notification failed', { error: e.message });
+    return { success: false, error: e.message };
+  }
+}
+
 async function sendWebhookNotification(alert) {
   const notify = config.notifications || {};
   if (!notify.enabled || !notify.webhook_url) return;
@@ -1241,6 +1281,8 @@ const html = `<!DOCTYPE html>
             </select>
           </div>
         </div>
+        <button class="btn secondary" onclick="testNotification()" style="margin-top:12px;">🔔 Send Test Notification</button>
+        <span id="notify-test-result" class="sub" style="margin-left:12px;"></span>
       </div>
       
       <div class="section">
@@ -1571,6 +1613,19 @@ const html = `<!DOCTYPE html>
     async function dismissAlerts() {
       await fetch(base + '/api/alerts/clear', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
       refresh();
+    }
+    
+    async function testNotification() {
+      const resultEl = document.getElementById('notify-test-result');
+      resultEl.textContent = 'Sending...';
+      try {
+        const res = await fetch(base + '/api/notify/test', { method: 'POST' });
+        const data = await res.json();
+        resultEl.innerHTML = data.success ? '<span class="ok">✅ Sent!</span>' : '<span class="danger">❌ ' + data.error + '</span>';
+      } catch (e) {
+        resultEl.innerHTML = '<span class="danger">❌ ' + e.message + '</span>';
+      }
+      setTimeout(() => resultEl.textContent = '', 5000);
     }
     
     async function resetConfig() {
@@ -2339,6 +2394,10 @@ const server = http.createServer(async (req, res) => {
     if (path === '/' || path === '/index.html') {
       res.setHeader('Content-Type', 'text/html');
       res.end(html);
+    
+    } else if (path === '/api/notify/test' && req.method === 'POST') {
+      const result = await sendTestNotification();
+      res.end(JSON.stringify(result));
     
     } else if (path === '/api/demo') {
       // Generate demo data for testing UI without HA

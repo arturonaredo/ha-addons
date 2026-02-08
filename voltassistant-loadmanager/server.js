@@ -2441,6 +2441,65 @@ const server = http.createServer(async (req, res) => {
       }));
     
     // ═══════════════════════════════════════════════════════════════════════
+    // REPORTS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    } else if (path === '/api/report/daily') {
+      try {
+        const [prices, solar] = await Promise.all([getPVPCPrices(), getSolarForecast()]);
+        const hour = new Date().getHours();
+        const currentPrice = prices.today?.prices?.find(p => p.hour === hour);
+        
+        const lines = [
+          '☀️ VoltAssistant - Daily Report',
+          '━'.repeat(30),
+          '',
+          '🔋 Battery: ' + state.battery.soc + '% (' + state.battery.kwh.toFixed(1) + ' kWh)',
+          '🎯 Target: ' + state.effectiveTargetSoc + '%',
+          '',
+          '⚡ Power Flow:',
+          '   Solar: ' + state.pv.power + ' W',
+          '   Load: ' + state.load.power + ' W',
+          '   Grid: ' + (state.grid.power > 0 ? '+' : '') + state.grid.power + ' W',
+          '',
+          '💶 Electricity:',
+          '   Current: ' + (currentPrice?.price * 100 || 0).toFixed(2) + ' ¢/kWh',
+          '   Period: ' + state.currentPeriod?.toUpperCase(),
+          '   Avg today: ' + (prices.today?.stats?.avg * 100 || 0).toFixed(2) + ' ¢/kWh',
+          '',
+          '📊 Forecast:',
+          '   Solar today: ' + (solar.today?.totalKwh || 0) + ' kWh',
+          '   Solar tomorrow: ' + (solar.tomorrow?.totalKwh || 0) + ' kWh',
+          '',
+          '⏰ Cheap hours: ' + (prices.today?.stats?.cheapest?.slice(0, 4).map(h => h + ':00').join(', ') || 'N/A'),
+          ''
+        ];
+        
+        // Add alerts if any
+        if (state.alerts?.active?.length > 0) {
+          lines.push('⚠️ Active Alerts:');
+          for (const a of state.alerts.active) {
+            lines.push('   • ' + a.message);
+          }
+          lines.push('');
+        }
+        
+        res.end(JSON.stringify({
+          success: true,
+          text: lines.join('\\n'),
+          data: {
+            battery: state.battery,
+            power: { solar: state.pv.power, load: state.load.power, grid: state.grid.power },
+            price: currentPrice?.price,
+            forecast: { solarToday: solar.today?.totalKwh, solarTomorrow: solar.tomorrow?.totalKwh },
+            alerts: state.alerts?.active?.length || 0
+          }
+        }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    // ═══════════════════════════════════════════════════════════════════════
     // ALERTS ENDPOINTS
     // ═══════════════════════════════════════════════════════════════════════
     

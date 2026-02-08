@@ -627,7 +627,7 @@ const html = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>⚡ VoltAssistant <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span></h1>
+  <h1>⚡ VoltAssistant <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span> <span id="last-update" style="font-size:11px;font-weight:normal;color:#8b949e;">⏱️ --</span></h1>
   
   <div id="alert-banner" class="alert-banner">
     <button class="dismiss" onclick="dismissAlerts()">✕</button>
@@ -1330,6 +1330,9 @@ const html = `<!DOCTYPE html>
             '<span class="badge ' + l.priority + '">' + l.priority + '</span>' +
           '</div>'
         ).join('') : '<p style="color:#8b949e">No loads configured. Go to Configuration tab to add loads.</p>';
+        
+        // Update timestamp
+        document.getElementById('last-update').textContent = '⏱️ ' + new Date().toLocaleTimeString();
         
         // Update alerts
         if (d.alerts && d.alerts.active && d.alerts.active.length > 0) {

@@ -2124,7 +2124,8 @@ const html = `<!DOCTYPE html>
     <div>
       <a href="/health" style="color:#3fb950;text-decoration:none;margin:0 8px;">Health</a>
       <a href="/metrics" style="color:#3fb950;text-decoration:none;margin:0 8px;">Metrics</a>
-      <a href="/api/report/daily" style="color:#3fb950;text-decoration:none;margin:0 8px;">Daily Report</a>
+      <a href="/api/report/daily" style="color:#3fb950;text-decoration:none;margin:0 8px;">Report</a>
+      <a href="/api/ha-config" style="color:#3fb950;text-decoration:none;margin:0 8px;">HA Config</a>
       <a href="https://github.com/arturonaredo/ha-addons" style="color:#3fb950;text-decoration:none;margin:0 8px;" target="_blank">GitHub</a>
     </div>
   </footer>

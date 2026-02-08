@@ -776,6 +776,11 @@ const html = `<!DOCTYPE html>
     </div>
     
     <button class="btn" onclick="loadForecast()">🔄 Refresh Forecast</button>
+    
+    <div class="card wide" style="margin-top:16px;">
+      <h2>📋 Hourly Prices (Next 12h)</h2>
+      <div id="fc-price-table" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;"></div>
+    </div>
   </div>
   
   <!-- CHARTS PANEL -->
@@ -1588,6 +1593,25 @@ const html = `<!DOCTYPE html>
         if (d.savings) {
           document.getElementById('fc-savings').innerHTML = d.savings.monthlySavings + '<span class="unit">€</span>';
           document.getElementById('fc-savings-pct').textContent = d.savings.savingsPercent + '% vs base';
+        }
+        
+        // Hourly price table (next 12h)
+        if (d.prices?.today?.prices) {
+          const currentHour = new Date().getHours();
+          const next12 = [];
+          for (let i = 0; i < 12; i++) {
+            const h = (currentHour + i) % 24;
+            const todayPrice = d.prices.today.prices.find(p => p.hour === h);
+            const tomorrowPrice = d.prices.tomorrow?.prices?.find(p => p.hour === h);
+            const price = (currentHour + i) < 24 ? todayPrice : tomorrowPrice;
+            if (price) next12.push({ hour: h, price: price.price, isCheap: d.prices.today.stats.cheapest?.includes(h) });
+          }
+          document.getElementById('fc-price-table').innerHTML = next12.map(p => 
+            '<div style="padding:8px;background:' + (p.isCheap ? 'rgba(63,185,80,0.2)' : '#21262d') + ';border-radius:4px;text-align:center;">' +
+              '<div style="font-weight:bold;">' + p.hour.toString().padStart(2,'0') + ':00</div>' +
+              '<div style="color:' + (p.isCheap ? '#3fb950' : '#e0e0e0') + ';">' + (p.price * 100).toFixed(2) + '¢</div>' +
+            '</div>'
+          ).join('');
         }
       } catch (e) {
         console.error('Forecast error:', e);

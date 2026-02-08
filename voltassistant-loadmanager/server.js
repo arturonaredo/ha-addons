@@ -93,6 +93,9 @@ const scheduledActions = [];
 // Do Not Disturb mode
 let dndUntil = null;
 
+// Action history
+const actionHistory = [];
+
 // Battery optimization presets
 const PRESETS = {
   'eco': { name: 'Eco Mode', target: 50, description: 'Minimal charging, maximize self-consumption' },
@@ -3208,12 +3211,25 @@ const server = http.createServer(async (req, res) => {
               return;
           }
           
+          // Log action to history
+          actionHistory.unshift({
+            action,
+            message,
+            timestamp: new Date().toISOString(),
+            source: 'ui'
+          });
+          if (actionHistory.length > 50) actionHistory.pop();
+          
           res.end(JSON.stringify({ success: true, message, action }));
         } catch (e) {
           res.end(JSON.stringify({ success: false, error: e.message }));
         }
       });
       return;
+    
+    } else if (path === '/api/actions') {
+      // Get action history
+      res.end(JSON.stringify({ success: true, actions: actionHistory }));
     
     // ═══════════════════════════════════════════════════════════════════════
     // WEBHOOK ENDPOINTS (for HA automations)

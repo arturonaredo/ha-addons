@@ -90,6 +90,9 @@ try {
 // Scheduled actions tracking
 const scheduledActions = [];
 
+// Do Not Disturb mode
+let dndUntil = null;
+
 // Battery optimization presets
 const PRESETS = {
   'eco': { name: 'Eco Mode', target: 50, description: 'Minimal charging, maximize self-consumption' },
@@ -506,6 +509,12 @@ async function sendTestNotification() {
 async function sendWebhookNotification(alert) {
   const notify = config.notifications || {};
   if (!notify.enabled || !notify.webhook_url) return;
+  
+  // Check Do Not Disturb mode
+  if (dndUntil && new Date() < new Date(dndUntil)) {
+    log('info', 'Notification suppressed (DND mode)');
+    return;
+  }
   
   // Check if we should send this type of notification
   if (alert.type === 'low_soc' && !notify.on_low_soc) return;
@@ -2509,6 +2518,29 @@ const server = http.createServer(async (req, res) => {
     if (path === '/' || path === '/index.html') {
       res.setHeader('Content-Type', 'text/html');
       res.end(html);
+    
+    } else if (path === '/api/dnd' && req.method === 'GET') {
+      res.end(JSON.stringify({
+        enabled: dndUntil && new Date() < new Date(dndUntil),
+        until: dndUntil
+      }));
+    
+    } else if (path === '/api/dnd' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { hours } = JSON.parse(body || '{}');
+        if (hours === 0 || hours === null) {
+          dndUntil = null;
+          log('info', 'DND mode disabled');
+          res.end(JSON.stringify({ success: true, enabled: false }));
+        } else {
+          dndUntil = new Date(Date.now() + (hours || 8) * 60 * 60 * 1000).toISOString();
+          log('info', 'DND mode enabled until ' + dndUntil);
+          res.end(JSON.stringify({ success: true, enabled: true, until: dndUntil }));
+        }
+      });
+      return;
     
     } else if (path === '/api/notify/test' && req.method === 'POST') {
       const result = await sendTestNotification();

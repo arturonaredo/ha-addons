@@ -87,6 +87,9 @@ try {
   log('success', 'User config loaded');
 } catch (e) {}
 
+// Scheduled actions tracking
+const scheduledActions = [];
+
 // Merge configs: user config overrides HA options
 function getConfig() {
   return {
@@ -2586,6 +2589,12 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: 'Usage: /api/set/target/{10-100} or /api/set/action/{action}' }));
       }
     
+    } else if (path === '/api/schedule' && req.method === 'GET') {
+      // List scheduled actions
+      const now = Date.now();
+      const active = scheduledActions.filter(s => s.executeAt > now);
+      res.end(JSON.stringify({ success: true, scheduled: active }));
+    
     } else if (path === '/api/schedule' && req.method === 'POST') {
       // Schedule an action for later
       let body = '';
@@ -2610,6 +2619,15 @@ const server = http.createServer(async (req, res) => {
           }
           
           const scheduledTime = new Date(Date.now() + delayMs);
+          const scheduleId = 'sched_' + Date.now();
+          
+          // Track the scheduled action
+          scheduledActions.push({
+            id: scheduleId,
+            action: action || 'target_' + target_soc,
+            executeAt: scheduledTime.getTime(),
+            scheduledFor: scheduledTime.toISOString()
+          });
           
           setTimeout(async () => {
             if (action === 'charge_100') state.manualTargetSoc = 100;
@@ -2623,10 +2641,15 @@ const server = http.createServer(async (req, res) => {
             saveState();
             await applyCharging();
             log('success', 'Scheduled action executed: ' + (action || 'target ' + target_soc));
+            
+            // Remove from scheduled list
+            const idx = scheduledActions.findIndex(s => s.id === scheduleId);
+            if (idx >= 0) scheduledActions.splice(idx, 1);
           }, delayMs);
           
           res.end(JSON.stringify({
             success: true,
+            id: scheduleId,
             message: 'Scheduled for ' + scheduledTime.toLocaleTimeString(),
             scheduledAt: scheduledTime.toISOString()
           }));

@@ -1328,9 +1328,12 @@ const html = `<!DOCTYPE html>
         const d = await res.json();
         
         document.getElementById('soc').textContent = d.battery.soc.toFixed(0);
+        document.getElementById('soc').title = d.battery.kwh.toFixed(2) + ' kWh stored';
         document.getElementById('batKwh').textContent = d.battery.kwh.toFixed(1) + ' / ' + d.battery.capacity.toFixed(0) + ' kWh';
         document.getElementById('socBar').style.width = d.battery.soc + '%';
+        document.getElementById('socBar').title = 'Current: ' + d.battery.soc.toFixed(1) + '%';
         document.getElementById('targetMarker').style.left = d.effectiveTargetSoc + '%';
+        document.getElementById('targetMarker').title = 'Target: ' + d.effectiveTargetSoc + '%';
         document.getElementById('targetSoc').textContent = d.effectiveTargetSoc;
         document.getElementById('targetType').textContent = d.manualTargetSoc !== null ? '(manual)' : '(auto)';
         

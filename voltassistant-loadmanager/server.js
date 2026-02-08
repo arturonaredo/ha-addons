@@ -647,6 +647,19 @@ const html = `<!DOCTYPE html>
   
   <!-- STATUS PANEL -->
   <div id="status-panel" class="panel active">
+    <div class="card wide" id="summary-card" style="background:linear-gradient(135deg,#1a1a1a 0%,#0d1117 100%);border:1px solid #30363d;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div style="font-size:24px;font-weight:bold;margin-bottom:4px;" id="summary-action">⏳ Loading...</div>
+          <div style="color:#8b949e;" id="summary-reason">Analyzing system state...</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:14px;color:#8b949e;">Next cheap hour</div>
+          <div style="font-size:20px;font-weight:bold;color:#3fb950;" id="summary-next-cheap">--:00</div>
+        </div>
+      </div>
+    </div>
+    
     <div class="card wide">
       <h2>🔋 Battery</h2>
       <div style="display:flex;justify-content:space-between;align-items:baseline">
@@ -1419,6 +1432,27 @@ const html = `<!DOCTYPE html>
         document.getElementById('last-update').textContent = '⏱️ ' + new Date().toLocaleTimeString();
         document.getElementById('conn-status').textContent = d.haConnection?.status === 'connected' ? '🟢' : '🔴';
         document.getElementById('conn-status').title = d.haConnection?.status === 'connected' ? 'Connected to HA' : 'Disconnected from HA';
+        
+        // Update summary card
+        let action, reason;
+        if (d.chargingDecision === 'charge') {
+          action = '⚡ Charging Battery';
+          reason = d.chargingReason || 'Cheap electricity';
+        } else if (d.pv?.power > 500) {
+          action = '☀️ Solar Powering Home';
+          reason = 'Using ' + d.pv.power + 'W from solar panels';
+        } else if (d.grid?.power < -100) {
+          action = '📤 Exporting to Grid';
+          reason = 'Selling ' + Math.abs(d.grid.power) + 'W back to grid';
+        } else if (d.battery?.soc < 20) {
+          action = '⚠️ Low Battery';
+          reason = 'Battery at ' + d.battery.soc + '% - consider charging';
+        } else {
+          action = '✅ Running Normally';
+          reason = 'Battery at ' + d.battery.soc + '% - ready for peak hours';
+        }
+        document.getElementById('summary-action').textContent = action;
+        document.getElementById('summary-reason').textContent = reason;
         
         // Update alerts
         if (d.alerts && d.alerts.active && d.alerts.active.length > 0) {

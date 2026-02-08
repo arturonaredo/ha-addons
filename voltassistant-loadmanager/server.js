@@ -837,6 +837,13 @@ const html = `<!DOCTYPE html>
         <button class="btn secondary" onclick="quickAction('storm')">⛈️ Storm</button>
         <button class="btn" onclick="quickAction('auto')" style="background:#58a6ff;">🤖 Auto</button>
       </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+        <span style="color:#8b949e;">Presets:</span>
+        <button class="btn secondary" style="font-size:11px;padding:4px 8px;" onclick="applyPreset('eco')">🌿 Eco</button>
+        <button class="btn secondary" style="font-size:11px;padding:4px 8px;" onclick="applyPreset('balanced')">⚖️ Balanced</button>
+        <button class="btn secondary" style="font-size:11px;padding:4px 8px;" onclick="applyPreset('full')">🔋 Full</button>
+        <button class="btn secondary" style="font-size:11px;padding:4px 8px;" onclick="applyPreset('export')">📤 Export</button>
+      </div>
       <div id="quick-action-result" class="sub" style="margin-top:12px;"></div>
     </div>
   </div>
@@ -2348,6 +2355,24 @@ const html = `<!DOCTYPE html>
     async function clearTarget() { await fetch(base + '/api/target', { method: 'DELETE' }); refresh(); }
     async function runBalance() { await fetch(base + '/api/balance', { method: 'POST' }); refresh(); }
     async function restoreAll() { await fetch(base + '/api/restore', { method: 'POST' }); refresh(); }
+    
+    async function applyPreset(presetId) {
+      const resultEl = document.getElementById('quick-action-result');
+      resultEl.innerHTML = '<span style="color:#d29922;">⏳ Applying preset...</span>';
+      try {
+        const res = await fetch(base + '/api/preset/' + presetId, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          resultEl.innerHTML = '<span class="ok">✅ ' + data.name + ' applied (target: ' + data.target + '%)</span>';
+          refresh();
+        } else {
+          resultEl.innerHTML = '<span class="danger">❌ ' + data.error + '</span>';
+        }
+      } catch (e) {
+        resultEl.innerHTML = '<span class="danger">❌ ' + e.message + '</span>';
+      }
+      setTimeout(() => resultEl.textContent = '', 5000);
+    }
     
     async function quickAction(action) {
       const resultEl = document.getElementById('quick-action-result');

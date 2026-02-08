@@ -872,6 +872,11 @@ const html = `<!DOCTYPE html>
         <div class="big ok" id="fc-savings">--<span class="unit">€</span></div>
         <div class="sub" id="fc-savings-pct">--%</div>
       </div>
+      <div class="card">
+        <h2>📊 Est. Daily Cost</h2>
+        <div class="big" id="fc-daily-cost">--<span class="unit">€</span></div>
+        <div class="sub" id="fc-daily-cost-detail">-- kWh imported</div>
+      </div>
     </div>
     
     <div class="card wide">
@@ -1924,6 +1929,15 @@ const html = `<!DOCTYPE html>
         if (d.savings) {
           document.getElementById('fc-savings').innerHTML = d.savings.monthlySavings + '<span class="unit">€</span>';
           document.getElementById('fc-savings-pct').textContent = d.savings.savingsPercent + '% vs base';
+        }
+        
+        // Estimate daily cost
+        if (d.plan && d.prices?.today?.stats) {
+          const neededKwh = d.plan.neededKwh || 0;
+          const avgPrice = d.prices.today.stats.avg || 0.12;
+          const estimatedCost = neededKwh * avgPrice;
+          document.getElementById('fc-daily-cost').innerHTML = estimatedCost.toFixed(2) + '<span class="unit">€</span>';
+          document.getElementById('fc-daily-cost-detail').textContent = neededKwh.toFixed(1) + ' kWh from grid';
         }
         
         // Hourly price table (next 12h)

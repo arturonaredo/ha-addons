@@ -1110,6 +1110,28 @@ const html = `<!DOCTYPE html>
   <!-- DEBUG PANEL -->
   <div id="debug-panel" class="panel">
     <div class="card wide">
+      <h2>ℹ️ System Info</h2>
+      <div class="debug-info">
+        <div class="item">
+          <div class="label">Version</div>
+          <div class="value">v1.3.0</div>
+        </div>
+        <div class="item">
+          <div class="label">Uptime</div>
+          <div class="value" id="dbg-uptime">--</div>
+        </div>
+        <div class="item">
+          <div class="label">Memory</div>
+          <div class="value" id="dbg-memory">--</div>
+        </div>
+        <div class="item">
+          <div class="label">Data Points</div>
+          <div class="value" id="dbg-datapoints">--</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card wide">
       <h2>🔗 Connection Status</h2>
       <div class="debug-info">
         <div class="item">
@@ -1550,6 +1572,17 @@ const html = `<!DOCTYPE html>
       const res = await fetch(base + '/api/debug');
       const d = await res.json();
       
+      // System info
+      if (d.system) {
+        const uptime = d.system.uptime || 0;
+        const hours = Math.floor(uptime / 3600);
+        const mins = Math.floor((uptime % 3600) / 60);
+        document.getElementById('dbg-uptime').textContent = hours + 'h ' + mins + 'm';
+        document.getElementById('dbg-memory').textContent = ((d.system.memory || 0) / 1024 / 1024).toFixed(1) + ' MB';
+        document.getElementById('dbg-datapoints').textContent = d.system.historyPoints || 0;
+      }
+      
+      // Connection status
       document.getElementById('dbg-ha-status').innerHTML = d.haConnection.status === 'connected' 
         ? '<span class="ok">✅ Connected</span>' 
         : '<span class="danger">❌ ' + d.haConnection.status + '</span>';
@@ -1982,6 +2015,14 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ success: true }));
     } else if (path === '/api/debug') {
       res.end(JSON.stringify({
+        system: {
+          version: '1.3.0',
+          uptime: Math.floor(process.uptime()),
+          memory: process.memoryUsage().heapUsed,
+          historyPoints: history.soc?.length || 0,
+          nodeVersion: process.version,
+          platform: process.platform
+        },
         haConnection: state.haConnection,
         haUrl: HA_URL,
         supervisorToken: !!SUPERVISOR_TOKEN,

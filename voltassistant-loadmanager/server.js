@@ -657,7 +657,10 @@ const html = `<!DOCTYPE html>
         <div class="progress-bar" id="socBar" style="width:0%;background:#3fb950"></div>
         <div class="progress-target" id="targetMarker" style="left:80%"></div>
       </div>
-      <div class="sub" style="margin-top:8px">Target: <strong id="targetSoc">--</strong>% <span id="targetType">(auto)</span></div>
+      <div class="sub" style="margin-top:8px">
+        Target: <strong id="targetSoc">--</strong>% <span id="targetType">(auto)</span>
+        <span id="manualExpiry" style="display:none;margin-left:8px;color:#d29922;">⏱️ <span id="expiryTime">--</span></span>
+      </div>
       <div class="target-control">
         <input type="number" id="manualTarget" placeholder="Target SOC %" min="10" max="100">
         <button onclick="setTarget()">Apply</button>
@@ -1256,6 +1259,23 @@ const html = `<!DOCTYPE html>
         document.getElementById('targetMarker').style.left = d.effectiveTargetSoc + '%';
         document.getElementById('targetSoc').textContent = d.effectiveTargetSoc;
         document.getElementById('targetType').textContent = d.manualTargetSoc !== null ? '(manual)' : '(auto)';
+        
+        // Show expiry timer for manual targets
+        if (d.manualTargetExpiry) {
+          const expiry = new Date(d.manualTargetExpiry);
+          const now = new Date();
+          const remaining = expiry - now;
+          if (remaining > 0) {
+            const hours = Math.floor(remaining / 3600000);
+            const mins = Math.floor((remaining % 3600000) / 60000);
+            document.getElementById('expiryTime').textContent = hours + 'h ' + mins + 'm';
+            document.getElementById('manualExpiry').style.display = 'inline';
+          } else {
+            document.getElementById('manualExpiry').style.display = 'none';
+          }
+        } else {
+          document.getElementById('manualExpiry').style.display = 'none';
+        }
         
         const box = document.getElementById('chargingBox');
         box.className = 'charging ' + d.chargingDecision;

@@ -356,6 +356,16 @@ async function updateState() {
   state.usagePercent = (state.load.power / state.contractedPower) * 100;
   state.isOverloaded = state.load.power > state.maxAvailable;
   
+  // EV Charging state
+  const ev = config.ev_charging || {};
+  if (ev.enabled && ev.car_soc_sensor) {
+    state.carSoc = await haNum(ev.car_soc_sensor);
+  }
+  if (ev.car_charging_slot) {
+    const slot = await haGet(ev.car_charging_slot);
+    state.carChargingSlot = slot?.state === 'on';
+  }
+  
   decideCharging();
   state.lastCheck = new Date().toISOString();
   
@@ -535,6 +545,7 @@ const html = `<!DOCTYPE html>
   <div class="tabs">
     <button class="tab active" onclick="showPanel('status')">Status</button>
     <button class="tab" onclick="showPanel('forecast')">🔮 Forecast</button>
+    <button class="tab" onclick="showPanel('ev')">🚗 EV</button>
     <button class="tab" onclick="showPanel('charts')">📊 Charts</button>
     <button class="tab" onclick="showPanel('config')">⚙️ Config</button>
     <button class="tab" onclick="showPanel('debug')">🐛 Debug</button>
@@ -680,6 +691,58 @@ const html = `<!DOCTYPE html>
       <div class="chart-wrapper"><canvas id="chart-power"></canvas></div>
     </div>
     <button class="btn" onclick="loadCharts()">🔄 Refresh Charts</button>
+  </div>
+  
+  <!-- EV PANEL -->
+  <div id="ev-panel" class="panel">
+    <div class="grid">
+      <div class="card">
+        <h2>🚗 Car Battery</h2>
+        <div class="big" id="ev-soc">--<span class="unit">%</span></div>
+        <div class="sub">Target: <span id="ev-target">80</span>%</div>
+      </div>
+      <div class="card">
+        <h2>⏰ Ready By</h2>
+        <div class="big" id="ev-ready-time">--</div>
+        <div class="sub" id="ev-hours-left">-- hours left</div>
+      </div>
+      <div class="card">
+        <h2>⚡ Charger</h2>
+        <div class="big" id="ev-power">--<span class="unit">kW</span></div>
+        <div class="sub" id="ev-slot-status">--</div>
+      </div>
+      <div class="card">
+        <h2>💶 Est. Cost</h2>
+        <div class="big" id="ev-cost">--<span class="unit">€</span></div>
+        <div class="sub" id="ev-kwh-needed">-- kWh needed</div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>📋 Charging Plan</h2>
+      <div class="charging" id="ev-plan-box">
+        <div id="ev-recommendation">Loading...</div>
+        <div class="sub" id="ev-plan-details">--</div>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="row"><span>Current Period</span><span id="ev-period">--</span></div>
+        <div class="row"><span>Optimal Hours</span><span id="ev-optimal-hours">--</span></div>
+        <div class="row"><span>Hours Needed</span><span id="ev-hours-needed">--</span></div>
+      </div>
+    </div>
+    
+    <div class="card wide">
+      <h2>🔋 Hourly Prices</h2>
+      <div id="ev-price-chart" style="display:flex;gap:2px;height:80px;align-items:flex-end;margin-top:12px;"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#8b949e;">
+        <span>Now</span><span>+6h</span><span>+12h</span><span>+18h</span><span>+24h</span>
+      </div>
+      <div class="sub" style="margin-top:12px;">Green bars = planned charging hours</div>
+    </div>
+    
+    <button class="btn" onclick="loadEV()">🔄 Refresh</button>
+    <button class="btn secondary" onclick="startEVCharge()">⚡ Start Charging Now</button>
+    <button class="btn secondary" onclick="stopEVCharge()">⏹️ Stop Charging</button>
   </div>
   
   <!-- CONFIG PANEL -->
@@ -913,6 +976,7 @@ const html = `<!DOCTYPE html>
       if (name === 'debug') { loadDebug(); loadLogs(); }
       if (name === 'charts') loadCharts();
       if (name === 'forecast') loadForecast();
+      if (name === 'ev') loadEV();
     }
     
     // ─────────────────────────────────────────────────────────────────────────
@@ -1102,6 +1166,83 @@ const html = `<!DOCTYPE html>
       } catch (e) {
         console.error('Forecast error:', e);
       }
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────
+    // EV CHARGING
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    async function loadEV() {
+      try {
+        // Get status
+        const statusRes = await fetch(base + '/api/ev/status');
+        const status = await statusRes.json();
+        
+        if (!status.enabled) {
+          document.getElementById('ev-recommendation').textContent = '⚠️ EV Charging not configured';
+          document.getElementById('ev-plan-details').textContent = 'Go to Configuration tab to set up EV sensors';
+          return;
+        }
+        
+        document.getElementById('ev-soc').innerHTML = (status.carSoc || 0) + '<span class="unit">%</span>';
+        document.getElementById('ev-target').textContent = status.targetSoc || 80;
+        document.getElementById('ev-ready-time').textContent = status.readyByTime || '--:--';
+        document.getElementById('ev-power').innerHTML = (status.maxPower || 0) + '<span class="unit">kW</span>';
+        document.getElementById('ev-slot-status').textContent = status.chargingSlot ? '✅ Slot active' : '⏸️ No slot';
+        document.getElementById('ev-period').textContent = status.currentPeriod || '--';
+        
+        const planBox = document.getElementById('ev-plan-box');
+        planBox.className = 'charging ' + (status.shouldCharge ? 'charge' : 'hold');
+        document.getElementById('ev-recommendation').textContent = status.shouldCharge ? '⚡ Charge Now' : '⏳ Wait for Valle';
+        document.getElementById('ev-plan-details').textContent = status.recommendation || '--';
+        
+        // Get plan
+        const planRes = await fetch(base + '/api/ev/plan');
+        const plan = await planRes.json();
+        
+        if (plan.success) {
+          document.getElementById('ev-cost').innerHTML = plan.estimatedCost + '<span class="unit">€</span>';
+          document.getElementById('ev-kwh-needed').textContent = plan.neededKwh + ' kWh needed';
+          document.getElementById('ev-optimal-hours').textContent = plan.chargeHours?.map(h => h.hour + ':00').join(', ') || 'None';
+          document.getElementById('ev-hours-needed').textContent = plan.hoursNeeded + ' hours';
+          
+          // Calculate hours left
+          const [readyHour] = (status.readyByTime || '07:30').split(':').map(Number);
+          const now = new Date().getHours();
+          let hoursLeft = readyHour - now;
+          if (hoursLeft <= 0) hoursLeft += 24;
+          document.getElementById('ev-hours-left').textContent = hoursLeft + ' hours until ready';
+          
+          // Render price chart with charge hours highlighted
+          const prices = await fetch(base + '/api/forecast/prices').then(r => r.json());
+          if (prices.today?.prices) {
+            const allPrices = [...prices.today.prices, ...(prices.tomorrow?.prices || []).map(p => ({...p, hour: p.hour + 24}))];
+            const next24 = allPrices.filter(p => p.hour >= now && p.hour < now + 24);
+            const maxPrice = Math.max(...next24.map(p => p.price), 0.01);
+            const chargeHourSet = new Set(plan.chargeHours?.map(h => h.hour) || []);
+            
+            document.getElementById('ev-price-chart').innerHTML = next24.map(p => {
+              const height = (p.price / maxPrice * 100).toFixed(0);
+              const isChargeHour = chargeHourSet.has(p.hour % 24);
+              const color = isChargeHour ? '#3fb950' : '#30363d';
+              return '<div style="flex:1;background:' + color + ';height:' + height + '%;border-radius:2px;" title="' + (p.hour % 24) + ':00 - ' + (p.price*100).toFixed(2) + '¢"></div>';
+            }).join('');
+          }
+        }
+      } catch (e) {
+        console.error('EV error:', e);
+        document.getElementById('ev-recommendation').textContent = '❌ Error loading EV data';
+      }
+    }
+    
+    async function startEVCharge() {
+      // This would call HA to start the charger - placeholder for now
+      alert('Start EV Charge - Configure your charger switch in loads');
+    }
+    
+    async function stopEVCharge() {
+      // This would call HA to stop the charger - placeholder for now  
+      alert('Stop EV Charge - Configure your charger switch in loads');
     }
     
     // ─────────────────────────────────────────────────────────────────────────
@@ -1696,6 +1837,76 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         res.end(JSON.stringify({ success: false, error: e.message }));
       }
+    
+    } else if (path === '/api/ev/status') {
+      // EV charging status
+      const ev = config.ev_charging || {};
+      const currentHour = new Date().getHours();
+      const isValle = state.currentPeriod === 'valle';
+      const shouldCharge = ev.enabled && (isValle || !ev.charge_in_valle);
+      
+      res.end(JSON.stringify({
+        success: true,
+        enabled: ev.enabled || false,
+        carSoc: state.carSoc,
+        targetSoc: ev.target_soc || 80,
+        maxPower: ev.max_charge_power_kw || 7.4,
+        chargingSlot: state.carChargingSlot,
+        currentPeriod: state.currentPeriod,
+        shouldCharge,
+        readyByTime: ev.smart_plan_time || '07:30',
+        recommendation: shouldCharge ? 'Charge now - ' + (isValle ? 'Valle period' : 'Charging allowed') : 'Wait for Valle period'
+      }));
+    
+    } else if (path === '/api/ev/plan') {
+      // EV charging plan
+      const ev = config.ev_charging || {};
+      if (!ev.enabled) {
+        res.end(JSON.stringify({ success: false, error: 'EV charging not enabled' }));
+        return;
+      }
+      
+      const carSoc = state.carSoc || 0;
+      const targetSoc = ev.target_soc || 80;
+      const batteryKwh = 60; // Assume 60kWh EV battery
+      const chargerKw = ev.max_charge_power_kw || 7.4;
+      
+      const neededKwh = (targetSoc - carSoc) / 100 * batteryKwh;
+      const hoursNeeded = Math.ceil(neededKwh / chargerKw);
+      
+      // Find cheapest hours for charging
+      const prices = await getPVPCPrices();
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      // Get remaining hours until ready time
+      const [readyHour] = (ev.smart_plan_time || '07:30').split(':').map(Number);
+      let hoursUntilReady = readyHour - currentHour;
+      if (hoursUntilReady <= 0) hoursUntilReady += 24;
+      
+      // Get available prices for remaining hours
+      const availablePrices = (prices.today?.prices || [])
+        .filter(p => p.hour >= currentHour)
+        .concat((prices.tomorrow?.prices || []).map(p => ({ ...p, hour: p.hour + 24 })))
+        .filter(p => p.hour < currentHour + hoursUntilReady)
+        .sort((a, b) => a.price - b.price);
+      
+      const chargeHours = availablePrices.slice(0, hoursNeeded);
+      const estimatedCost = chargeHours.reduce((sum, h) => sum + h.price * chargerKw, 0);
+      
+      res.end(JSON.stringify({
+        success: true,
+        carSoc,
+        targetSoc,
+        neededKwh: Math.round(neededKwh * 10) / 10,
+        hoursNeeded,
+        readyByTime: ev.smart_plan_time,
+        chargeHours: chargeHours.map(h => ({ hour: h.hour % 24, price: h.price })),
+        estimatedCost: Math.round(estimatedCost * 100) / 100,
+        recommendation: hoursNeeded <= 0 ? 'Already at target' : 
+          chargeHours.some(h => h.hour % 24 === currentHour) ? 'Start charging now' : 
+          'Wait until ' + (chargeHours[0]?.hour % 24) + ':00'
+      }));
     
     } else if (path === '/api/webhook/ha') {
       // Webhook for HA automations - returns current recommendation

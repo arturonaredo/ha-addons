@@ -831,6 +831,62 @@ const html = `<!DOCTYPE html>
     
     .power-arrow .dot:nth-child(2) { animation-delay: 0.33s; }
     .power-arrow .dot:nth-child(3) { animation-delay: 0.66s; }
+    
+    /* Circular Gauge */
+    .gauge-container {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 0 auto;
+    }
+    .gauge-svg {
+      transform: rotate(-90deg);
+      width: 100%;
+      height: 100%;
+    }
+    .gauge-bg {
+      fill: none;
+      stroke: #21262d;
+      stroke-width: 12;
+    }
+    .gauge-fill {
+      fill: none;
+      stroke: url(#gaugeGradient);
+      stroke-width: 12;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.5s ease;
+    }
+    .gauge-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+    .gauge-value {
+      font-size: 42px;
+      font-weight: 800;
+      color: #e6edf3;
+      line-height: 1;
+    }
+    .gauge-value .unit {
+      font-size: 20px;
+      font-weight: 400;
+      color: #8b949e;
+    }
+    .gauge-label {
+      font-size: 12px;
+      color: #8b949e;
+      margin-top: 4px;
+    }
+    .gauge-target {
+      position: absolute;
+      font-size: 11px;
+      color: #58a6ff;
+      background: #58a6ff22;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -868,27 +924,49 @@ const html = `<!DOCTYPE html>
     </div>
     
     <div class="card wide">
-      <h2>🔋 Battery</h2>
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <div class="big"><span id="soc">--</span><span class="unit">%</span></div>
-        <div id="batKwh" class="sub">-- kWh</div>
-      </div>
-      <div class="progress">
-        <div class="progress-bar" id="socBar" style="width:0%;background:#3fb950"></div>
-        <div class="progress-target" id="targetMarker" style="left:80%"></div>
-      </div>
-      <div class="sub" style="margin-top:8px">
-        Target: <strong id="targetSoc">--</strong>% <span id="targetType">(auto)</span>
-        <span id="manualExpiry" style="display:none;margin-left:8px;color:#d29922;">⏱️ <span id="expiryTime">--</span></span>
-      </div>
-      <div class="target-control">
-        <input type="number" id="manualTarget" placeholder="Target SOC %" min="10" max="100">
-        <button onclick="setTarget()">Apply</button>
-        <button class="clear" onclick="clearTarget()">Auto</button>
-      </div>
-      <div class="charging" id="chargingBox">
-        <div id="chargingDecision">--</div>
-        <div class="sub" id="chargingReason">--</div>
+      <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+        <!-- Circular Gauge -->
+        <div class="gauge-container">
+          <svg class="gauge-svg" viewBox="0 0 100 100">
+            <defs>
+              <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#f85149"/>
+                <stop offset="30%" style="stop-color:#d29922"/>
+                <stop offset="60%" style="stop-color:#3fb950"/>
+                <stop offset="100%" style="stop-color:#3fb950"/>
+              </linearGradient>
+            </defs>
+            <circle class="gauge-bg" cx="50" cy="50" r="42"/>
+            <circle class="gauge-fill" id="gauge-circle" cx="50" cy="50" r="42" 
+                    stroke-dasharray="264" stroke-dashoffset="264"/>
+          </svg>
+          <div class="gauge-center">
+            <div class="gauge-value"><span id="soc">--</span><span class="unit">%</span></div>
+            <div class="gauge-label" id="batKwh">-- kWh</div>
+          </div>
+        </div>
+        
+        <!-- Battery Info -->
+        <div style="flex:1;min-width:200px;">
+          <div style="margin-bottom:12px;">
+            <div style="color:#8b949e;font-size:12px;margin-bottom:4px;">Target SOC</div>
+            <div style="font-size:24px;font-weight:700;color:#58a6ff;">
+              <span id="targetSoc">--</span>% <span id="targetType" style="font-size:12px;font-weight:400;color:#8b949e;">(auto)</span>
+            </div>
+            <span id="manualExpiry" style="display:none;font-size:12px;color:#d29922;">⏱️ <span id="expiryTime">--</span></span>
+          </div>
+          
+          <div class="target-control" style="margin-bottom:12px;">
+            <input type="number" id="manualTarget" placeholder="Set target %" min="10" max="100" style="width:100px;">
+            <button onclick="setTarget()">Set</button>
+            <button class="clear" onclick="clearTarget()">Auto</button>
+          </div>
+          
+          <div class="charging" id="chargingBox" style="margin-top:8px;">
+            <div id="chargingDecision">--</div>
+            <div class="sub" id="chargingReason">--</div>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -1633,10 +1711,12 @@ const html = `<!DOCTYPE html>
         document.getElementById('soc').textContent = d.battery.soc.toFixed(0);
         document.getElementById('soc').title = d.battery.kwh.toFixed(2) + ' kWh stored';
         document.getElementById('batKwh').textContent = d.battery.kwh.toFixed(1) + ' / ' + d.battery.capacity.toFixed(0) + ' kWh';
-        document.getElementById('socBar').style.width = d.battery.soc + '%';
-        document.getElementById('socBar').title = 'Current: ' + d.battery.soc.toFixed(1) + '%';
-        document.getElementById('targetMarker').style.left = d.effectiveTargetSoc + '%';
-        document.getElementById('targetMarker').title = 'Target: ' + d.effectiveTargetSoc + '%';
+        
+        // Animate circular gauge
+        const gaugeCircle = document.getElementById('gauge-circle');
+        const circumference = 2 * Math.PI * 42; // 264
+        const offset = circumference - (d.battery.soc / 100) * circumference;
+        gaugeCircle.style.strokeDashoffset = offset;
         document.getElementById('targetSoc').textContent = d.effectiveTargetSoc;
         document.getElementById('targetType').textContent = d.manualTargetSoc !== null ? '(manual)' : '(auto)';
         

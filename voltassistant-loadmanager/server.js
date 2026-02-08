@@ -1062,6 +1062,25 @@ const html = `<!DOCTYPE html>
         <button class="btn secondary" onclick="quickAction('storm')">⛈️ Storm</button>
         <button class="btn" onclick="quickAction('auto')" style="background:#58a6ff;">🤖 Auto</button>
       </div>
+      
+      <!-- Can I Run? Feature -->
+      <div style="margin-top:16px;padding:16px;background:#21262d;border-radius:12px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="font-size:14px;">🤔 Can I run my...</span>
+          <select id="appliance-select" style="padding:8px 12px;border-radius:8px;background:#0d1117;border:1px solid #30363d;color:#e6edf3;">
+            <option value="2000">🧺 Washing Machine (2kW)</option>
+            <option value="2500">🍽️ Dishwasher (2.5kW)</option>
+            <option value="3000">🔌 Oven (3kW)</option>
+            <option value="1500">💨 Hair Dryer (1.5kW)</option>
+            <option value="7400">🚗 EV Charger (7.4kW)</option>
+            <option value="1000">🧹 Vacuum (1kW)</option>
+            <option value="2200">☕ Kettle (2.2kW)</option>
+          </select>
+          <button class="btn" onclick="checkAppliance()" style="background:#238636;">✓ Check Now</button>
+        </div>
+        <div id="appliance-result" style="margin-top:12px;padding:12px;border-radius:8px;display:none;"></div>
+      </div>
+      
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
         <span style="color:#8b949e;">Presets:</span>
         <button class="btn secondary" style="font-size:11px;padding:4px 8px;" onclick="applyPreset('eco')">🌿 Eco</button>
@@ -2687,6 +2706,32 @@ const html = `<!DOCTYPE html>
     async function runBalance() { await fetch(base + '/api/balance', { method: 'POST' }); refresh(); }
     async function restoreAll() { await fetch(base + '/api/restore', { method: 'POST' }); refresh(); }
     
+    async function checkAppliance() {
+      const watts = parseInt(document.getElementById('appliance-select').value);
+      const resultEl = document.getElementById('appliance-result');
+      resultEl.style.display = 'block';
+      resultEl.innerHTML = '<span style="color:#d29922;">🔄 Checking...</span>';
+      
+      try {
+        const res = await fetch(base + '/api/can-run?watts=' + watts);
+        const data = await res.json();
+        
+        if (data.canRun) {
+          resultEl.style.background = '#238636';
+          resultEl.innerHTML = '<div style="font-size:18px;font-weight:700;">✅ YES! Go ahead!</div>' +
+            '<div style="margin-top:4px;font-size:13px;">' + data.reason + '</div>';
+        } else {
+          resultEl.style.background = '#f8514933';
+          resultEl.innerHTML = '<div style="font-size:18px;font-weight:700;">⏳ Wait a bit</div>' +
+            '<div style="margin-top:4px;font-size:13px;">' + data.reason + '</div>' +
+            (data.bestTime ? '<div style="margin-top:4px;font-size:12px;color:#3fb950;">💡 Best time: ' + data.bestTime + '</div>' : '');
+        }
+      } catch (e) {
+        resultEl.style.background = '#f8514933';
+        resultEl.innerHTML = '<span style="color:#f85149;">❌ Error: ' + e.message + '</span>';
+      }
+    }
+    
     async function applyPreset(presetId) {
       const resultEl = document.getElementById('quick-action-result');
       resultEl.innerHTML = '<span style="color:#d29922;">⏳ Applying preset...</span>';
@@ -2936,6 +2981,69 @@ const server = http.createServer(async (req, res) => {
     } else if (path === '/api/status') {
       await updateState();
       res.end(JSON.stringify(state));
+    
+    } else if (path.startsWith('/api/can-run')) {
+      // Check if an appliance can run now
+      const urlParams = new URL('http://x' + path.replace('/api/can-run', '') + (url.search || '')).searchParams;
+      const watts = parseInt(urlParams.get('watts') || '2000');
+      
+      await updateState();
+      
+      const availableSolar = state.pv?.power || 0;
+      const currentLoad = state.load?.power || 0;
+      const batterySoc = state.battery?.soc || 0;
+      const batteryPower = state.battery?.power || 0;
+      const gridPower = state.grid?.power || 0;
+      const contractedPower = state.contractedPower || 6900;
+      const currentPrice = state.currentPrice || 0.12;
+      const period = state.currentPeriod || 'llano';
+      
+      // Calculate headroom
+      const headroom = contractedPower - currentLoad;
+      const solarSurplus = availableSolar - currentLoad;
+      
+      let canRun = false;
+      let reason = '';
+      let bestTime = null;
+      
+      // Decision logic
+      if (watts <= solarSurplus) {
+        canRun = true;
+        reason = `You have ${Math.round(solarSurplus)}W solar surplus. Run it FREE! ☀️`;
+      } else if (watts <= headroom && batterySoc > 50) {
+        canRun = true;
+        reason = `Good battery (${batterySoc}%) and headroom available. Cost: ~${(watts/1000 * currentPrice).toFixed(2)}€/h`;
+      } else if (watts <= headroom && period === 'valle') {
+        canRun = true;
+        reason = `Valle period - cheap electricity! Cost: ~${(watts/1000 * currentPrice).toFixed(2)}€/h`;
+      } else if (watts > headroom) {
+        canRun = false;
+        reason = `Would exceed contracted power (${(contractedPower/1000).toFixed(1)}kW). Current load: ${(currentLoad/1000).toFixed(1)}kW`;
+        bestTime = 'When solar is higher or load is lower';
+      } else if (period === 'punta' && batterySoc < 30) {
+        canRun = false;
+        reason = `Peak hours with low battery (${batterySoc}%). Wait for cheaper hours.`;
+        bestTime = 'After 22:00 (Valle period)';
+      } else {
+        canRun = true;
+        reason = `OK to run, but consider waiting for solar or cheaper hours.`;
+      }
+      
+      res.end(JSON.stringify({
+        success: true,
+        canRun,
+        reason,
+        bestTime,
+        details: {
+          requestedWatts: watts,
+          availableSolar,
+          currentLoad,
+          headroom,
+          batterySoc,
+          period,
+          pricePerKwh: currentPrice
+        }
+      }));
     
     } else if (path === '/api/speak') {
       // Text summary for voice assistants

@@ -1033,6 +1033,14 @@ const html = `<!DOCTYPE html>
       </div>
     </div>
     
+    <div class="card wide">
+      <h2>📜 Alert History</h2>
+      <div id="alert-history" style="max-height:200px;overflow-y:auto;margin-top:12px;">
+        <p style="color:#8b949e;">No alerts recorded</p>
+      </div>
+      <button class="btn secondary" onclick="clearAlertHistory()" style="margin-top:12px;">🗑️ Clear History</button>
+    </div>
+    
     <button class="btn" onclick="loadStats()">🔄 Refresh Stats</button>
   </div>
   
@@ -2003,9 +2011,31 @@ const html = `<!DOCTYPE html>
           document.getElementById('st-fc-expensive').textContent = summary.forecast.expensiveHours.slice(0, 4).map(h => h + ':00').join(', ') || '--';
           document.getElementById('st-fc-tomorrow').textContent = summary.forecast.tomorrowAvailable ? '✅ Yes' : '❌ Not yet';
         }
+        // Load alert history
+        const alertRes = await fetch(base + '/api/alerts/history');
+        const alertHistory = await alertRes.json();
+        
+        if (alertHistory.length > 0) {
+          document.getElementById('alert-history').innerHTML = alertHistory.slice(0, 20).map(a => 
+            '<div style="padding:8px;border-bottom:1px solid #30363d;">' +
+              '<span style="color:' + (a.severity === 'danger' ? '#f85149' : a.severity === 'warning' ? '#d29922' : '#3fb950') + ';">' +
+              (a.severity === 'danger' ? '🔴' : a.severity === 'warning' ? '🟡' : '🔵') + '</span> ' +
+              '<span style="color:#8b949e;font-size:11px;">' + new Date(a.timestamp).toLocaleString() + '</span><br>' +
+              '<span>' + a.message + '</span>' +
+            '</div>'
+          ).join('');
+        } else {
+          document.getElementById('alert-history').innerHTML = '<p style="color:#8b949e;padding:12px;">No alerts recorded</p>';
+        }
       } catch (e) {
         console.error('Stats error:', e);
       }
+    }
+    
+    async function clearAlertHistory() {
+      if (!confirm('Clear all alert history?')) return;
+      await fetch(base + '/api/alerts/history', { method: 'DELETE' });
+      loadStats();
     }
     
     // ─────────────────────────────────────────────────────────────────────────
@@ -3293,11 +3323,13 @@ automation:
       }));
     
     } else if (path === '/api/alerts/history') {
-      res.end(JSON.stringify({
-        success: true,
-        history: state.alerts.history,
-        count: state.alerts.history.length
-      }));
+      if (req.method === 'DELETE') {
+        state.alerts.history = [];
+        saveState();
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        res.end(JSON.stringify(state.alerts.history));
+      }
     
     } else if (path === '/api/alerts/clear' && req.method === 'POST') {
       let body = '';

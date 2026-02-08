@@ -2138,6 +2138,7 @@ const html = `<!DOCTYPE html>
   <footer style="margin-top:32px;padding:24px;text-align:center;border-top:1px solid #30363d;color:#8b949e;font-size:12px;">
     <div style="margin-bottom:8px;">
       ⚡ <strong>VoltAssistant</strong> v1.3.0 · Smart Battery & Load Management
+      <span style="margin-left:12px;cursor:help;" title="Shortcuts: 1-7 tabs, R refresh, Ctrl+A auto, Ctrl+C charge">⌨️</span>
     </div>
     <div>
       <a href="/health" style="color:#3fb950;text-decoration:none;margin:0 8px;">Health</a>

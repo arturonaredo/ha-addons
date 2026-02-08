@@ -589,6 +589,18 @@ const html = `<!DOCTYPE html>
       <button class="btn" onclick="runBalance()">🔄 Balance</button>
       <button class="btn secondary" onclick="restoreAll()">⬆️ Restore All</button>
     </div>
+    
+    <div class="card wide">
+      <h2>⚡ Quick Actions</h2>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btn" onclick="quickAction('charge_100')">🔋 Charge to 100%</button>
+        <button class="btn" onclick="quickAction('charge_80')">🔋 Charge to 80%</button>
+        <button class="btn secondary" onclick="quickAction('stop_charge')">⏹️ Stop Charging</button>
+        <button class="btn secondary" onclick="quickAction('discharge')">⚡ Discharge Mode</button>
+        <button class="btn secondary" onclick="quickAction('auto')">🤖 Auto Mode</button>
+      </div>
+      <div id="quick-action-result" class="sub" style="margin-top:12px;"></div>
+    </div>
   </div>
   
   <!-- FORECAST PANEL -->
@@ -1327,6 +1339,28 @@ const html = `<!DOCTYPE html>
     async function runBalance() { await fetch(base + '/api/balance', { method: 'POST' }); refresh(); }
     async function restoreAll() { await fetch(base + '/api/restore', { method: 'POST' }); refresh(); }
     
+    async function quickAction(action) {
+      const resultEl = document.getElementById('quick-action-result');
+      resultEl.textContent = 'Executing...';
+      try {
+        const res = await fetch(base + '/api/quick-action', { 
+          method: 'POST', 
+          headers: {'Content-Type':'application/json'}, 
+          body: JSON.stringify({ action }) 
+        });
+        const data = await res.json();
+        if (data.success) {
+          resultEl.innerHTML = '<span class="ok">✅ ' + data.message + '</span>';
+          refresh();
+        } else {
+          resultEl.innerHTML = '<span class="danger">❌ ' + (data.error || 'Failed') + '</span>';
+        }
+      } catch (e) {
+        resultEl.innerHTML = '<span class="danger">❌ Error: ' + e.message + '</span>';
+      }
+      setTimeout(() => resultEl.textContent = '', 5000);
+    }
+    
     refresh();
     setInterval(refresh, 5000);
   </script>
@@ -1352,6 +1386,49 @@ const server = http.createServer(async (req, res) => {
     if (path === '/' || path === '/index.html') {
       res.setHeader('Content-Type', 'text/html');
       res.end(html);
+    
+    } else if (path === '/health' || path === '/api/health') {
+      res.end(JSON.stringify({
+        status: 'ok',
+        version: '1.3.0',
+        uptime: Math.floor(process.uptime()),
+        haConnection: state.haConnection.status,
+        lastCheck: state.lastCheck
+      }));
+    
+    } else if (path === '/metrics') {
+      res.setHeader('Content-Type', 'text/plain');
+      const lines = [
+        '# HELP voltassistant_up Service status (1 = up)',
+        '# TYPE voltassistant_up gauge',
+        'voltassistant_up 1',
+        '',
+        '# HELP voltassistant_battery_soc Battery state of charge',
+        '# TYPE voltassistant_battery_soc gauge',
+        'voltassistant_battery_soc ' + (state.battery.soc || 0),
+        '',
+        '# HELP voltassistant_solar_power Current solar generation',
+        '# TYPE voltassistant_solar_power gauge',
+        'voltassistant_solar_power ' + (state.pv.power || 0),
+        '',
+        '# HELP voltassistant_grid_power Grid power (+ import, - export)',
+        '# TYPE voltassistant_grid_power gauge',
+        'voltassistant_grid_power ' + (state.grid.power || 0),
+        '',
+        '# HELP voltassistant_load_power Current load power',
+        '# TYPE voltassistant_load_power gauge',
+        'voltassistant_load_power ' + (state.load.power || 0),
+        '',
+        '# HELP voltassistant_price Current electricity price',
+        '# TYPE voltassistant_price gauge',
+        'voltassistant_price ' + (state.currentPrice || 0),
+        '',
+        '# HELP voltassistant_uptime_seconds Process uptime',
+        '# TYPE voltassistant_uptime_seconds gauge',
+        'voltassistant_uptime_seconds ' + Math.floor(process.uptime()),
+      ];
+      res.end(lines.join('\\n'));
+    
     } else if (path === '/api/status') {
       await updateState();
       res.end(JSON.stringify(state));
@@ -1509,6 +1586,152 @@ const server = http.createServer(async (req, res) => {
         }));
       } catch (e) {
         res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // QUICK ACTIONS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    } else if (path === '/api/quick-action' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', async () => {
+        try {
+          const { action } = JSON.parse(body || '{}');
+          const c = ctrl();
+          let message = '';
+          
+          switch (action) {
+            case 'charge_100':
+              state.manualTargetSoc = 100;
+              state.manualTargetExpiry = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(); // 6h
+              saveState();
+              if (c.program_1_soc) await setNumber(c.program_1_soc, 100);
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 100);
+              message = 'Charging to 100% (6h override)';
+              log('success', message);
+              break;
+              
+            case 'charge_80':
+              state.manualTargetSoc = 80;
+              state.manualTargetExpiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(); // 4h
+              saveState();
+              if (c.program_1_soc) await setNumber(c.program_1_soc, 80);
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 80);
+              message = 'Charging to 80% (4h override)';
+              log('success', message);
+              break;
+              
+            case 'stop_charge':
+              state.manualTargetSoc = state.battery.soc;
+              state.manualTargetExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2h
+              saveState();
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 0);
+              message = 'Grid charging stopped (2h)';
+              log('success', message);
+              break;
+              
+            case 'discharge':
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 0);
+              message = 'Discharge mode enabled';
+              log('success', message);
+              break;
+              
+            case 'auto':
+              state.manualTargetSoc = null;
+              state.manualTargetExpiry = null;
+              saveState();
+              await applyCharging();
+              message = 'Auto mode enabled';
+              log('success', message);
+              break;
+              
+            default:
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, error: 'Unknown action: ' + action }));
+              return;
+          }
+          
+          res.end(JSON.stringify({ success: true, message, action }));
+        } catch (e) {
+          res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // WEBHOOK ENDPOINTS (for HA automations)
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    } else if (path === '/api/webhook/notify') {
+      // Generate notification text for HA
+      try {
+        const [prices, solar] = await Promise.all([getPVPCPrices(), getSolarForecast()]);
+        const hour = new Date().getHours();
+        const currentPrice = prices.today?.prices?.find(p => p.hour === hour);
+        
+        const lines = [
+          '⚡ VoltAssistant Update',
+          '',
+          '🔋 Battery: ' + state.battery.soc + '%',
+          '☀️ Solar: ' + state.pv.power + 'W',
+          '💶 Price: ' + (currentPrice?.price * 100 || 0).toFixed(1) + '¢/kWh',
+          '',
+          '📊 Forecast:',
+          '  Solar today: ' + (solar.today?.totalKwh || 0) + ' kWh',
+          '  Cheap hours: ' + (prices.today?.stats?.cheapest?.slice(0, 3).map(h => h + ':00').join(', ') || 'N/A'),
+        ];
+        
+        res.end(JSON.stringify({
+          success: true,
+          title: '⚡ VoltAssistant',
+          message: lines.join('\\n'),
+          data: {
+            soc: state.battery.soc,
+            price: currentPrice?.price,
+            solarForecast: solar.today?.totalKwh,
+            cheapestHours: prices.today?.stats?.cheapest
+          }
+        }));
+      } catch (e) {
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    
+    } else if (path === '/api/webhook/ha') {
+      // Webhook for HA automations - returns current recommendation
+      try {
+        const [prices, solar] = await Promise.all([getPVPCPrices(), getSolarForecast()]);
+        const cfg = getConfig();
+        const plan = generateChargingPlan(prices, solar, {
+          capacityKwh: cfg.inverter?.battery_capacity_kwh || 32.6,
+          currentSoc: state.battery.soc,
+          targetSoc: state.effectiveTargetSoc,
+          chargeRateKw: (cfg.inverter?.max_power || 6000) / 1000
+        });
+        
+        const hour = new Date().getHours();
+        const currentPrice = prices.today?.prices?.find(p => p.hour === hour);
+        const isCheap = prices.today?.stats?.cheapest?.includes(hour);
+        const isExpensive = prices.today?.stats?.expensive?.includes(hour);
+        
+        res.end(JSON.stringify({
+          battery_soc: state.battery.soc,
+          target_soc: state.effectiveTargetSoc,
+          current_price: currentPrice?.price || 0,
+          is_cheap_hour: isCheap,
+          is_expensive_hour: isExpensive,
+          solar_power: state.pv.power,
+          grid_power: state.grid.power,
+          load_power: state.load.power,
+          recommended_action: plan.action,
+          charge_hours: plan.chargeHours,
+          next_charge_hour: plan.nextChargeHour,
+          solar_forecast_today: solar.today?.totalKwh || 0,
+          overloaded: state.isOverloaded,
+          period: state.currentPeriod
+        }));
+      } catch (e) {
+        res.end(JSON.stringify({ error: e.message }));
       }
     
     } else {

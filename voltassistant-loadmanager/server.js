@@ -1,7 +1,6 @@
 /**
  * Volt Load Manager - Home Assistant Addon
  * Battery optimization + load management for Deye inverters
- * With tariff periods (punta/llano/valle) and smart charging
  */
 
 const http = require('http');
@@ -10,65 +9,86 @@ const axios = require('axios');
 
 // HA Supervisor API
 const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN;
-const HA_URL = 'http://supervisor/core/api';
+const HA_URL = SUPERVISOR_TOKEN ? 'http://supervisor/core/api' : 'http://192.168.31.54:8123/api';
 
-// Read addon options
-let options = {};
+// Config files
+const HA_OPTIONS = '/data/options.json';
+const USER_CONFIG = '/data/user-config.json';
+const STATE_FILE = '/data/state.json';
+
+// Load HA addon options as defaults
+let haOptions = {};
 try {
-  options = JSON.parse(fs.readFileSync('/data/options.json', 'utf8'));
-  console.log('📋 Config loaded');
+  haOptions = JSON.parse(fs.readFileSync(HA_OPTIONS, 'utf8'));
+  console.log('📋 HA options loaded');
 } catch (e) {
-  console.log('⚠️ No options.json, using defaults');
+  console.log('⚠️ No HA options, using defaults');
 }
 
-// Shortcuts
-const inv = options.inverter || {};
-const sens = options.sensors || {};
-const ctrl = options.controls || {};
-const tariff = options.tariff_periods || {};
-const ev = options.ev_charging || {};
-const lm = options.load_manager || {};
-const batOpt = options.battery_optimization || {};
+// Load user config (overrides HA options)
+let userConfig = {};
+try {
+  userConfig = JSON.parse(fs.readFileSync(USER_CONFIG, 'utf8'));
+  console.log('📋 User config loaded');
+} catch (e) {}
 
-// Persistent state file
-const STATE_FILE = '/data/state.json';
+// Merge configs: user config overrides HA options
+function getConfig() {
+  return {
+    inverter: { ...haOptions.inverter, ...userConfig.inverter },
+    sensors: { ...haOptions.sensors, ...userConfig.sensors },
+    controls: { ...haOptions.controls, ...userConfig.controls },
+    tariff_periods: { ...haOptions.tariff_periods, ...userConfig.tariff_periods },
+    loads: userConfig.loads || haOptions.loads || [],
+    ev_charging: { ...haOptions.ev_charging, ...userConfig.ev_charging },
+    load_manager: { ...haOptions.load_manager, ...userConfig.load_manager },
+    battery_optimization: { ...haOptions.battery_optimization, ...userConfig.battery_optimization }
+  };
+}
+
+function saveUserConfig(config) {
+  userConfig = config;
+  try {
+    fs.writeFileSync(USER_CONFIG, JSON.stringify(config, null, 2));
+    console.log('💾 User config saved');
+  } catch (e) {
+    console.error('Error saving config:', e);
+  }
+}
+
+// Get current merged config
+let config = getConfig();
+const inv = () => config.inverter || {};
+const sens = () => config.sensors || {};
+const ctrl = () => config.controls || {};
+const tariff = () => config.tariff_periods || {};
+const lm = () => config.load_manager || {};
+const batOpt = () => config.battery_optimization || {};
 
 // State
 let state = {
-  // Inverter
-  battery: { soc: 0, power: 0, kwh: 0, capacity: inv.battery_capacity_kwh || 32.6 },
+  battery: { soc: 0, power: 0, kwh: 0, capacity: 32.6 },
   grid: { power: 0 },
   load: { power: 0 },
   pv: { power: 0 },
-  
-  // Tariff
   currentPrice: null,
   currentPeriod: 'unknown',
   contractedPower: 6900,
-  
-  // Battery optimization
-  manualTargetSoc: null,  // null = automatic, number = manual override
-  manualTargetExpiry: null,  // When manual target expires
+  manualTargetSoc: null,
+  manualTargetExpiry: null,
   effectiveTargetSoc: 80,
-  chargingDecision: 'idle',  // idle, charge, hold
+  chargingDecision: 'idle',
   chargingReason: '',
-  
-  // EV
   carSoc: null,
   carChargingSlot: false,
-  
-  // Load manager
   totalManagedPower: 0,
   maxAvailable: 6000,
   usagePercent: 0,
   isOverloaded: false,
   shedLoads: [],
-  loads: (options.loads || []).map(l => ({ ...l, current_power: 0, is_on: true })),
-  
-  // Meta
+  loads: [],
   lastAction: null,
-  lastCheck: null,
-  lastChargingUpdate: null
+  lastCheck: null
 };
 
 // Load persistent state
@@ -77,7 +97,6 @@ try {
   if (saved.manualTargetSoc !== undefined) state.manualTargetSoc = saved.manualTargetSoc;
   if (saved.manualTargetExpiry) state.manualTargetExpiry = saved.manualTargetExpiry;
   if (saved.shedLoads) state.shedLoads = saved.shedLoads;
-  console.log('💾 Restored state:', { manualTargetSoc: state.manualTargetSoc });
 } catch (e) {}
 
 function saveState() {
@@ -94,48 +113,41 @@ function saveState() {
 // HA API
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function getState(entityId) {
+async function haGet(entityId) {
   if (!entityId) return null;
   try {
-    const res = await axios.get(`${HA_URL}/states/${entityId}`, {
-      headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
-      timeout: 5000
-    });
+    const headers = SUPERVISOR_TOKEN 
+      ? { Authorization: `Bearer ${SUPERVISOR_TOKEN}` }
+      : { Authorization: `Bearer ${process.env.HA_TOKEN}` };
+    const res = await axios.get(`${HA_URL}/states/${entityId}`, { headers, timeout: 5000 });
     return res.data;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
-async function getNumericState(entityId) {
-  const entity = await getState(entityId);
+async function haNum(entityId) {
+  const entity = await haGet(entityId);
   return parseFloat(entity?.state) || 0;
 }
 
-async function callService(domain, service, data) {
+async function haCall(domain, service, data) {
   try {
-    await axios.post(`${HA_URL}/services/${domain}/${service}`, data, {
-      headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
-      timeout: 5000
-    });
+    const headers = SUPERVISOR_TOKEN 
+      ? { Authorization: `Bearer ${SUPERVISOR_TOKEN}` }
+      : { Authorization: `Bearer ${process.env.HA_TOKEN}` };
+    await axios.post(`${HA_URL}/services/${domain}/${service}`, data, { headers, timeout: 5000 });
     return true;
-  } catch (e) {
-    console.error(`Error ${domain}.${service}:`, e.message);
-    return false;
-  }
+  } catch (e) { return false; }
 }
 
-const turnOff = (id) => callService(id.split('.')[0], 'turn_off', { entity_id: id });
-const turnOn = (id) => callService(id.split('.')[0], 'turn_on', { entity_id: id });
-const setNumber = (id, val) => callService('number', 'set_value', { entity_id: id, value: val });
-const setTime = (id, val) => callService('time', 'set_value', { entity_id: id, time: val });
-const setSelect = (id, opt) => callService('select', 'select_option', { entity_id: id, option: opt });
+const turnOff = (id) => haCall(id.split('.')[0], 'turn_off', { entity_id: id });
+const turnOn = (id) => haCall(id.split('.')[0], 'turn_on', { entity_id: id });
+const setNumber = (id, val) => haCall('number', 'set_value', { entity_id: id, value: val });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tariff Period Detection
+// Logic
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getCurrentPeriodFromTime() {
+function getCurrentPeriod() {
   const now = new Date();
   const hour = now.getHours();
   const isWeekend = now.getDay() === 0 || now.getDay() === 6;
@@ -150,222 +162,146 @@ function isWeekend() {
   return day === 0 || day === 6;
 }
 
-function getPeriodConfig(period) {
-  const defaults = {
-    valle: { contracted_power_kw: 6.9, charge_battery: true, target_soc: 100 },
-    llano: { contracted_power_kw: 3.45, charge_battery: false, target_soc: 50 },
-    punta: { contracted_power_kw: 3.45, charge_battery: false, target_soc: 20 }
-  };
-  return tariff[period] || defaults[period] || defaults.llano;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Battery Optimization Logic
-// ─────────────────────────────────────────────────────────────────────────────
-
 function decideCharging() {
-  if (!batOpt.enabled) {
-    return { decision: 'idle', reason: 'Optimización desactivada', targetSoc: state.battery.soc };
-  }
+  const opt = batOpt();
+  if (!opt.enabled) return { decision: 'idle', reason: 'Optimization disabled', targetSoc: state.battery.soc };
   
-  // Check manual target expiry
   if (state.manualTargetExpiry && new Date(state.manualTargetExpiry) < new Date()) {
     state.manualTargetSoc = null;
     state.manualTargetExpiry = null;
     saveState();
   }
   
-  // Determine target SOC
-  let targetSoc = batOpt.default_target_soc || 80;
+  let targetSoc = opt.default_target_soc || 80;
   let reason = '';
   
-  // Manual override takes priority
   if (state.manualTargetSoc !== null) {
     targetSoc = state.manualTargetSoc;
-    reason = `Target manual: ${targetSoc}%`;
-  }
-  // Weekend: keep full if configured
-  else if (isWeekend() && batOpt.keep_full_weekends) {
+    reason = `Manual target: ${targetSoc}%`;
+  } else if (isWeekend() && opt.keep_full_weekends) {
     targetSoc = 100;
-    reason = 'Fin de semana → 100%';
-  }
-  // Check price thresholds
-  else if (state.currentPrice !== null) {
-    if (state.currentPrice <= (batOpt.always_charge_below_price || 0.05)) {
+    reason = 'Weekend → 100%';
+  } else if (state.currentPrice !== null) {
+    if (state.currentPrice <= (opt.always_charge_below_price || 0.05)) {
       targetSoc = 100;
-      reason = `Precio muy bajo (${state.currentPrice.toFixed(3)}€) → 100%`;
-    } else if (state.currentPrice >= (batOpt.never_charge_above_price || 0.15)) {
-      targetSoc = batOpt.min_soc || 10;
-      reason = `Precio alto (${state.currentPrice.toFixed(3)}€) → mínimo`;
+      reason = `Low price (${state.currentPrice.toFixed(3)}€) → 100%`;
+    } else if (state.currentPrice >= (opt.never_charge_above_price || 0.15)) {
+      targetSoc = opt.min_soc || 10;
+      reason = `High price (${state.currentPrice.toFixed(3)}€) → minimum`;
     } else {
-      // Proportional target based on price
-      const minPrice = batOpt.always_charge_below_price || 0.05;
-      const maxPrice = batOpt.never_charge_above_price || 0.15;
-      const priceRatio = (state.currentPrice - minPrice) / (maxPrice - minPrice);
-      targetSoc = Math.round(100 - (priceRatio * (100 - (batOpt.min_soc || 10))));
-      reason = `Precio ${state.currentPrice.toFixed(3)}€ → ${targetSoc}%`;
+      const minP = opt.always_charge_below_price || 0.05;
+      const maxP = opt.never_charge_above_price || 0.15;
+      const ratio = (state.currentPrice - minP) / (maxP - minP);
+      targetSoc = Math.round(100 - (ratio * (100 - (opt.min_soc || 10))));
+      reason = `Price ${state.currentPrice.toFixed(3)}€ → ${targetSoc}%`;
     }
-  }
-  // Period-based fallback
-  else {
-    const periodConfig = getPeriodConfig(state.currentPeriod);
-    targetSoc = periodConfig.target_soc;
-    reason = `Periodo ${state.currentPeriod} → ${targetSoc}%`;
   }
   
   state.effectiveTargetSoc = targetSoc;
   
-  // Decide action
   if (state.battery.soc < targetSoc - 2) {
     return { decision: 'charge', reason, targetSoc };
-  } else if (state.battery.soc >= targetSoc) {
-    return { decision: 'hold', reason: `SOC ${state.battery.soc}% >= target ${targetSoc}%`, targetSoc };
-  } else {
-    return { decision: 'hold', reason: `SOC ${state.battery.soc}% ≈ target ${targetSoc}%`, targetSoc };
   }
+  return { decision: 'hold', reason: `SOC ${state.battery.soc}% ≥ target ${targetSoc}%`, targetSoc };
 }
 
-async function applyChargingDecision() {
+async function applyCharging() {
   const { decision, reason, targetSoc } = decideCharging();
   state.chargingDecision = decision;
   state.chargingReason = reason;
-  state.effectiveTargetSoc = targetSoc;
   
   if (decision === 'charge') {
-    // Enable grid charging
-    if (ctrl.program_1_soc) await setNumber(ctrl.program_1_soc, targetSoc);
-    if (ctrl.grid_charge_start_soc) await setNumber(ctrl.grid_charge_start_soc, targetSoc);
-    console.log(`🔋 Charging → ${targetSoc}%: ${reason}`);
+    const c = ctrl();
+    if (c.program_1_soc) await setNumber(c.program_1_soc, targetSoc);
+    if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, targetSoc);
   } else {
-    // Disable grid charging (let battery discharge or idle)
-    if (ctrl.grid_charge_start_soc) await setNumber(ctrl.grid_charge_start_soc, 0);
-    console.log(`⏸️ Hold: ${reason}`);
+    const c = ctrl();
+    if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 0);
   }
-  
-  state.lastChargingUpdate = new Date().toISOString();
   return { decision, reason, targetSoc };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// State Updates
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function updateState() {
-  const [soc, batPower, gridPower, loadPower, pvPower, batCap] = await Promise.all([
-    getNumericState(sens.battery_soc),
-    getNumericState(sens.battery_power),
-    getNumericState(sens.grid_power),
-    getNumericState(sens.load_power),
-    getNumericState(sens.pv_power),
-    sens.battery_capacity ? getNumericState(sens.battery_capacity) : null
+  config = getConfig();
+  const s = sens();
+  const i = inv();
+  
+  const [soc, batPower, gridPower, loadPower, pvPower] = await Promise.all([
+    haNum(s.battery_soc), haNum(s.battery_power), haNum(s.grid_power), haNum(s.load_power), haNum(s.pv_power)
   ]);
   
   state.battery.soc = soc;
   state.battery.power = batPower;
-  state.battery.capacity = batCap || inv.battery_capacity_kwh || 32.6;
+  state.battery.capacity = i.battery_capacity_kwh || 32.6;
   state.battery.kwh = (soc / 100) * state.battery.capacity;
   state.grid.power = gridPower;
   state.load.power = loadPower;
   state.pv.power = pvPower;
   
-  if (sens.pvpc_price) state.currentPrice = await getNumericState(sens.pvpc_price);
+  if (s.pvpc_price) state.currentPrice = await haNum(s.pvpc_price);
   
-  if (sens.tariff_period) {
-    const periodEntity = await getState(sens.tariff_period);
-    state.currentPeriod = periodEntity?.state?.toLowerCase() || getCurrentPeriodFromTime();
+  if (s.tariff_period) {
+    const p = await haGet(s.tariff_period);
+    state.currentPeriod = p?.state?.toLowerCase() || getCurrentPeriod();
   } else {
-    state.currentPeriod = getCurrentPeriodFromTime();
+    state.currentPeriod = getCurrentPeriod();
   }
   
-  const periodConfig = getPeriodConfig(state.currentPeriod);
+  const periodConfig = tariff()[state.currentPeriod] || {};
   state.contractedPower = (periodConfig.contracted_power_kw || 6.9) * 1000;
   
-  if (ev.enabled) {
-    if (ev.car_soc_sensor) state.carSoc = await getNumericState(ev.car_soc_sensor);
-    if (ev.car_charging_slot) {
-      const slot = await getState(ev.car_charging_slot);
-      state.carChargingSlot = slot?.state === 'on';
-    }
-  }
-  
+  state.loads = (config.loads || []).map(l => ({ ...l, current_power: 0, is_on: true }));
   for (const load of state.loads) {
-    if (load.power_sensor) {
-      const p = await getNumericState(load.power_sensor);
-      load.current_power = p < 100 ? p * 1000 : p;
-    }
+    if (load.power_sensor) load.current_power = await haNum(load.power_sensor);
     if (load.switch_entity) {
-      const sw = await getState(load.switch_entity);
+      const sw = await haGet(load.switch_entity);
       load.is_on = sw?.state === 'on';
     }
   }
   
-  state.totalManagedPower = state.loads.reduce((sum, l) => sum + (l.is_on ? l.current_power : 0), 0);
-  const margin = (lm.safety_margin_percent || 10) / 100;
+  const margin = (lm().safety_margin_percent || 10) / 100;
   state.maxAvailable = state.contractedPower * (1 - margin);
   state.usagePercent = (state.load.power / state.contractedPower) * 100;
   state.isOverloaded = state.load.power > state.maxAvailable;
   
-  // Update charging decision
   decideCharging();
-  
   state.lastCheck = new Date().toISOString();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Load Balancing
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function balanceLoads() {
-  if (!lm.enabled) return { actions: [], message: 'Load manager disabled' };
-  
+  if (!lm().enabled) return { actions: [] };
   await updateState();
   const actions = [];
   
   if (state.isOverloaded) {
     const excess = state.load.power - state.maxAvailable;
     let saved = 0;
-    
     for (const priority of ['accessory', 'comfort']) {
       if (saved >= excess) break;
-      const toShed = state.loads
-        .filter(l => l.priority === priority && l.switch_entity && l.is_on && !state.shedLoads.includes(l.id))
-        .sort((a, b) => b.current_power - a.current_power);
-      
+      const toShed = state.loads.filter(l => l.priority === priority && l.switch_entity && l.is_on && !state.shedLoads.includes(l.id));
       for (const load of toShed) {
         if (saved >= excess) break;
         if (await turnOff(load.switch_entity)) {
-          saved += load.current_power;
+          saved += load.current_power || load.max_power || 1000;
           state.shedLoads.push(load.id);
-          actions.push(`⬇️ ${load.name} apagado`);
+          actions.push(`⬇️ ${load.name} off`);
         }
       }
     }
-    if (actions.length) {
-      state.lastAction = { time: new Date().toISOString(), type: 'shed', actions };
-      saveState();
-    }
+    if (actions.length) saveState();
   } else if (state.shedLoads.length > 0) {
     const headroom = state.maxAvailable - state.load.power;
-    for (const priority of ['comfort', 'accessory']) {
-      const toRestore = state.loads
-        .filter(l => l.priority === priority && state.shedLoads.includes(l.id))
-        .sort((a, b) => (a.max_power || 1000) - (b.max_power || 1000));
-      
-      for (const load of toRestore) {
-        if ((load.max_power || 1000) <= headroom * 0.8) {
-          if (await turnOn(load.switch_entity)) {
-            state.shedLoads = state.shedLoads.filter(id => id !== load.id);
-            actions.push(`⬆️ ${load.name} restaurado`);
-          }
+    for (const id of [...state.shedLoads]) {
+      const load = state.loads.find(l => l.id === id);
+      if (load && (load.max_power || 1000) <= headroom * 0.8) {
+        if (await turnOn(load.switch_entity)) {
+          state.shedLoads = state.shedLoads.filter(i => i !== id);
+          actions.push(`⬆️ ${load.name} on`);
         }
       }
     }
-    if (actions.length) {
-      state.lastAction = { time: new Date().toISOString(), type: 'restore', actions };
-      saveState();
-    }
+    if (actions.length) saveState();
   }
-  
   return { actions };
 }
 
@@ -380,98 +316,259 @@ const html = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f0f1a; color: #eee; padding: 16px; max-width: 800px; margin: 0 auto; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1117; color: #e6edf3; padding: 16px; max-width: 900px; margin: 0 auto; }
     h1 { font-size: 20px; margin-bottom: 16px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab { padding: 10px 20px; background: #21262d; border: none; color: #e6edf3; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .tab.active { background: #238636; }
+    .panel { display: none; }
+    .panel.active { display: block; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
-    .card { background: linear-gradient(145deg, #1a1a2e, #16213e); border-radius: 12px; padding: 14px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 14px; }
     .card.wide { grid-column: 1 / -1; }
-    .card h2 { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; }
+    .card h2 { font-size: 11px; color: #8b949e; text-transform: uppercase; margin-bottom: 8px; }
     .big { font-size: 28px; font-weight: 700; }
-    .unit { font-size: 12px; color: #666; }
-    .sub { font-size: 12px; color: #666; margin-top: 4px; }
-    .valle { color: #00d26a; } .llano { color: #ffc107; } .punta { color: #ff4757; }
-    .ok { color: #00d26a; } .warn { color: #ffc107; } .danger { color: #ff4757; }
-    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1f3460; font-size: 14px; }
+    .unit { font-size: 12px; color: #8b949e; }
+    .sub { font-size: 12px; color: #8b949e; margin-top: 4px; }
+    .ok { color: #3fb950; } .warn { color: #d29922; } .danger { color: #f85149; }
+    .valle { color: #3fb950; } .llano { color: #d29922; } .punta { color: #f85149; }
+    .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #30363d; }
     .row:last-child { border: none; }
     .period-bar { display: flex; gap: 4px; margin: 8px 0; }
-    .period-bar span { flex: 1; text-align: center; padding: 6px; border-radius: 6px; font-size: 11px; font-weight: 600; opacity: 0.3; }
+    .period-bar span { flex: 1; text-align: center; padding: 8px; border-radius: 6px; font-size: 12px; font-weight: 600; opacity: 0.3; border: 1px solid transparent; }
     .period-bar span.active { opacity: 1; }
-    .period-bar .valle { background: #00d26a22; border: 1px solid #00d26a; }
-    .period-bar .llano { background: #ffc10722; border: 1px solid #ffc107; }
-    .period-bar .punta { background: #ff475722; border: 1px solid #ff4757; }
-    .progress { height: 8px; background: #1f3460; border-radius: 4px; margin-top: 8px; overflow: hidden; position: relative; }
-    .progress-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
-    .progress-target { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; }
-    .target-control { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
-    .target-control input { flex: 1; background: #1f3460; border: 1px solid #3d5a80; border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 16px; }
-    .target-control button { background: #00d26a; border: none; padding: 8px 16px; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; }
-    .target-control button.clear { background: #666; }
-    .btn { background: #0984e3; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; margin-right: 8px; margin-top: 8px; }
-    .load { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #1f3460; }
+    .period-bar .valle { background: #23883622; border-color: #238636; color: #3fb950; }
+    .period-bar .llano { background: #d2992222; border-color: #d29922; color: #d29922; }
+    .period-bar .punta { background: #f8514922; border-color: #f85149; color: #f85149; }
+    .progress { height: 10px; background: #30363d; border-radius: 5px; margin-top: 8px; overflow: hidden; position: relative; }
+    .progress-bar { height: 100%; border-radius: 5px; transition: width 0.3s; }
+    .progress-target { position: absolute; top: -2px; bottom: -2px; width: 3px; background: #fff; border-radius: 2px; }
+    .target-control { display: flex; gap: 8px; margin-top: 12px; }
+    .target-control input { flex: 1; background: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 10px; color: #e6edf3; font-size: 16px; }
+    .target-control button { background: #238636; border: none; padding: 10px 20px; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; }
+    .target-control button.clear { background: #6e7681; }
+    .btn { background: #238636; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; margin-right: 8px; margin-top: 8px; }
+    .btn.secondary { background: #6e7681; }
+    .load { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #30363d; }
     .load:last-child { border: none; }
-    .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
-    .badge.essential { background: #ff4757; } .badge.comfort { background: #ffc107; color: #000; } .badge.accessory { background: #5f27cd; }
+    .badge { font-size: 10px; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; font-weight: 600; }
+    .badge.essential { background: #f85149; } .badge.comfort { background: #d29922; } .badge.accessory { background: #8957e5; }
     .shed { opacity: 0.4; }
-    .charging { padding: 12px; background: #1f3460; border-radius: 8px; margin-top: 12px; }
-    .charging.charge { border-left: 4px solid #00d26a; }
-    .charging.hold { border-left: 4px solid #ffc107; }
+    .charging { padding: 14px; background: #21262d; border-radius: 8px; margin-top: 12px; border-left: 4px solid #6e7681; }
+    .charging.charge { border-left-color: #3fb950; }
+    .charging.hold { border-left-color: #d29922; }
+    /* Config styles */
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 6px; text-transform: uppercase; }
+    .form-group input, .form-group select { width: 100%; background: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 10px; color: #e6edf3; font-size: 14px; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #238636; }
+    .form-group .hint { font-size: 11px; color: #6e7681; margin-top: 4px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #30363d; }
+    .section h3 { font-size: 14px; margin-bottom: 16px; color: #e6edf3; }
+    .load-item { background: #21262d; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+    .load-item .load-header { display: flex; justify-content: space-between; align-items: center; }
+    .load-item input, .load-item select { margin-top: 8px; }
+    .add-btn { background: none; border: 2px dashed #30363d; color: #8b949e; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; }
+    .add-btn:hover { border-color: #238636; color: #3fb950; }
+    .remove-btn { background: #f85149; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
   </style>
 </head>
 <body>
   <h1>⚡ Volt Load Manager</h1>
   
-  <div class="card wide">
-    <h2>🔋 Batería</h2>
-    <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <div class="big"><span id="soc">--</span><span class="unit">%</span></div>
-      <div id="batKwh" class="sub">-- kWh</div>
+  <div class="tabs">
+    <button class="tab active" onclick="showPanel('status')">Status</button>
+    <button class="tab" onclick="showPanel('config')">Configuration</button>
+  </div>
+  
+  <div id="status-panel" class="panel active">
+    <div class="card wide">
+      <h2>🔋 Battery</h2>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div class="big"><span id="soc">--</span><span class="unit">%</span></div>
+        <div id="batKwh" class="sub">-- kWh</div>
+      </div>
+      <div class="progress">
+        <div class="progress-bar" id="socBar" style="width:0%;background:#3fb950"></div>
+        <div class="progress-target" id="targetMarker" style="left:80%"></div>
+      </div>
+      <div class="sub" style="margin-top:8px">Target: <strong id="targetSoc">--</strong>% <span id="targetType">(auto)</span></div>
+      <div class="target-control">
+        <input type="number" id="manualTarget" placeholder="Target SOC %" min="10" max="100">
+        <button onclick="setTarget()">Apply</button>
+        <button class="clear" onclick="clearTarget()">Auto</button>
+      </div>
+      <div class="charging" id="chargingBox">
+        <div id="chargingDecision">--</div>
+        <div class="sub" id="chargingReason">--</div>
+      </div>
     </div>
-    <div class="progress">
-      <div class="progress-bar" id="socBar" style="width:0%;background:#00d26a"></div>
-      <div class="progress-target" id="targetMarker" style="left:80%"></div>
-    </div>
-    <div class="sub" style="margin-top:8px">Target: <strong id="targetSoc">--</strong>% <span id="targetType">(auto)</span></div>
     
-    <div class="target-control">
-      <input type="number" id="manualTarget" placeholder="Target SOC %" min="10" max="100">
-      <button onclick="setTarget()">Aplicar</button>
-      <button class="clear" onclick="clearTarget()">Auto</button>
+    <div class="card wide">
+      <h2>Tariff Period</h2>
+      <div class="period-bar">
+        <span class="valle" id="p-valle">Valle</span>
+        <span class="llano" id="p-llano">Llano</span>
+        <span class="punta" id="p-punta">Punta</span>
+      </div>
+      <div class="row"><span>PVPC Price</span><span id="price">--</span></div>
+      <div class="row"><span>Contracted Power</span><span id="contracted">--</span></div>
+      <div class="row"><span>Current Usage</span><span id="usage">--</span></div>
     </div>
     
-    <div class="charging" id="chargingBox">
-      <div id="chargingDecision">--</div>
-      <div class="sub" id="chargingReason">--</div>
+    <div class="grid">
+      <div class="card"><h2>☀️ Solar</h2><div class="big" id="pv">--<span class="unit">W</span></div></div>
+      <div class="card"><h2>🏠 Load</h2><div class="big" id="load">--<span class="unit">W</span></div></div>
+      <div class="card"><h2>⚡ Grid</h2><div class="big" id="grid">--<span class="unit">W</span></div><div class="sub" id="gridDir">--</div></div>
+      <div class="card"><h2>Status</h2><div class="big" id="status">--</div></div>
+    </div>
+    
+    <div class="card wide">
+      <h2>🔌 Controllable Loads</h2>
+      <div id="loads">--</div>
+      <button class="btn" onclick="runBalance()">🔄 Balance</button>
+      <button class="btn secondary" onclick="restoreAll()">⬆️ Restore All</button>
     </div>
   </div>
   
-  <div class="card wide">
-    <h2>Periodo Tarifario</h2>
-    <div class="period-bar">
-      <span class="valle" id="p-valle">Valle</span>
-      <span class="llano" id="p-llano">Llano</span>
-      <span class="punta" id="p-punta">Punta</span>
+  <div id="config-panel" class="panel">
+    <div class="card wide">
+      <div class="section">
+        <h3>🔌 Inverter</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Max Power (W)</label>
+            <input type="number" id="cfg-inv-max-power" value="6000">
+            <div class="hint">Maximum inverter output power</div>
+          </div>
+          <div class="form-group">
+            <label>Battery Capacity (kWh)</label>
+            <input type="number" id="cfg-inv-capacity" step="0.1" value="32.6">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Min SOC (%)</label>
+            <input type="number" id="cfg-inv-min-soc" value="10">
+            <div class="hint">Never discharge below this</div>
+          </div>
+          <div class="form-group">
+            <label>Max SOC (%)</label>
+            <input type="number" id="cfg-inv-max-soc" value="100">
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
+        <h3>📊 Sensors (HA Entity IDs)</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Battery SOC</label>
+            <input type="text" id="cfg-sens-soc" placeholder="sensor.inverter_battery_soc">
+          </div>
+          <div class="form-group">
+            <label>Battery Power</label>
+            <input type="text" id="cfg-sens-bat-power" placeholder="sensor.inverter_battery_power">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Grid Power</label>
+            <input type="text" id="cfg-sens-grid" placeholder="sensor.inverter_grid_power">
+          </div>
+          <div class="form-group">
+            <label>Load Power</label>
+            <input type="text" id="cfg-sens-load" placeholder="sensor.inverter_load_power">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Solar Power</label>
+            <input type="text" id="cfg-sens-pv" placeholder="sensor.inverter_pv_power">
+          </div>
+          <div class="form-group">
+            <label>PVPC Price</label>
+            <input type="text" id="cfg-sens-price" placeholder="sensor.esios_pvpc">
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
+        <h3>🎯 Battery Optimization</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Default Target SOC (%)</label>
+            <input type="number" id="cfg-opt-default-soc" value="80">
+          </div>
+          <div class="form-group">
+            <label>Keep Full on Weekends</label>
+            <select id="cfg-opt-weekends">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Always Charge Below (€/kWh)</label>
+            <input type="number" id="cfg-opt-low-price" step="0.01" value="0.05">
+            <div class="hint">Charge to 100% when price is below this</div>
+          </div>
+          <div class="form-group">
+            <label>Never Charge Above (€/kWh)</label>
+            <input type="number" id="cfg-opt-high-price" step="0.01" value="0.15">
+            <div class="hint">Don't charge when price is above this</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
+        <h3>⚡ Tariff Periods</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Valle - Contracted Power (kW)</label>
+            <input type="number" id="cfg-tariff-valle-power" step="0.1" value="6.9">
+          </div>
+          <div class="form-group">
+            <label>Valle - Target SOC (%)</label>
+            <input type="number" id="cfg-tariff-valle-soc" value="100">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Llano - Contracted Power (kW)</label>
+            <input type="number" id="cfg-tariff-llano-power" step="0.1" value="3.45">
+          </div>
+          <div class="form-group">
+            <label>Punta - Contracted Power (kW)</label>
+            <input type="number" id="cfg-tariff-punta-power" step="0.1" value="3.45">
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
+        <h3>🔌 Controllable Loads</h3>
+        <div id="config-loads"></div>
+        <button class="add-btn" onclick="addLoad()">+ Add Load</button>
+      </div>
+      
+      <button class="btn" onclick="saveConfig()">💾 Save Configuration</button>
+      <button class="btn secondary" onclick="loadConfig()">🔄 Reload</button>
     </div>
-    <div class="row"><span>Precio PVPC</span><span id="price">--</span></div>
-    <div class="row"><span>Potencia contratada</span><span id="contracted">--</span></div>
-    <div class="row"><span>Consumo actual</span><span id="usage">--</span></div>
-  </div>
-  
-  <div class="grid">
-    <div class="card"><h2>☀️ Solar</h2><div class="big" id="pv">--<span class="unit">W</span></div></div>
-    <div class="card"><h2>🏠 Consumo</h2><div class="big" id="load">--<span class="unit">W</span></div></div>
-    <div class="card"><h2>⚡ Red</h2><div class="big" id="grid">--<span class="unit">W</span></div><div class="sub" id="gridDir">--</div></div>
-    <div class="card"><h2>Estado</h2><div class="big" id="status">--</div></div>
-  </div>
-  
-  <div class="card wide">
-    <h2>🔌 Cargas</h2>
-    <div id="loads">--</div>
-    <button class="btn" onclick="runBalance()">🔄 Balancear</button>
-    <button class="btn" onclick="restoreAll()" style="background:#5f27cd">⬆️ Restaurar</button>
   </div>
   
   <script>
     const base = window.location.pathname.replace(/\\/$/, '');
+    let currentConfig = {};
+    
+    function showPanel(name) {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(name + '-panel').classList.add('active');
+      event.target.classList.add('active');
+      if (name === 'config') loadConfig();
+    }
     
     async function refresh() {
       try {
@@ -487,7 +584,7 @@ const html = `<!DOCTYPE html>
         
         const box = document.getElementById('chargingBox');
         box.className = 'charging ' + d.chargingDecision;
-        document.getElementById('chargingDecision').textContent = d.chargingDecision === 'charge' ? '🔋 Cargando' : '⏸️ En espera';
+        document.getElementById('chargingDecision').textContent = d.chargingDecision === 'charge' ? '🔋 Charging' : '⏸️ Holding';
         document.getElementById('chargingReason').textContent = d.chargingReason;
         
         ['valle','llano','punta'].forEach(p => document.getElementById('p-'+p).classList.toggle('active', d.currentPeriod === p));
@@ -498,18 +595,122 @@ const html = `<!DOCTYPE html>
         document.getElementById('pv').innerHTML = d.pv.power.toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('load').innerHTML = d.load.power.toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('grid').innerHTML = Math.abs(d.grid.power).toFixed(0) + '<span class="unit">W</span>';
-        document.getElementById('gridDir').textContent = d.grid.power > 50 ? '← Import' : d.grid.power < -50 ? '→ Export' : '≈';
+        document.getElementById('gridDir').textContent = d.grid.power > 50 ? '← Import' : d.grid.power < -50 ? '→ Export' : '≈ Balanced';
         
-        const statusClass = d.isOverloaded ? 'danger' : 'ok';
-        document.getElementById('status').innerHTML = '<span class="' + statusClass + '">' + (d.isOverloaded ? '⚠️' : '✅') + '</span>';
+        document.getElementById('status').innerHTML = '<span class="' + (d.isOverloaded ? 'danger' : 'ok') + '">' + (d.isOverloaded ? '⚠️ Overload' : '✅ OK') + '</span>';
         
         document.getElementById('loads').innerHTML = d.loads.length ? d.loads.map(l =>
           '<div class="load' + (d.shedLoads.includes(l.id) ? ' shed' : '') + '">' +
-            '<div><strong>' + l.name + '</strong><br><span style="color:#888">' + ((l.current_power||0)/1000).toFixed(2) + ' kW</span></div>' +
+            '<div><strong>' + l.name + '</strong><br><span style="color:#8b949e">' + ((l.current_power||0)/1000).toFixed(2) + ' kW</span></div>' +
             '<span class="badge ' + l.priority + '">' + l.priority + '</span>' +
           '</div>'
-        ).join('') : '<p style="color:#888">Sin cargas configuradas</p>';
+        ).join('') : '<p style="color:#8b949e">No loads configured. Go to Configuration tab to add loads.</p>';
       } catch (e) { console.error(e); }
+    }
+    
+    async function loadConfig() {
+      const res = await fetch(base + '/api/config');
+      currentConfig = await res.json();
+      const c = currentConfig;
+      
+      document.getElementById('cfg-inv-max-power').value = c.inverter?.max_power || 6000;
+      document.getElementById('cfg-inv-capacity').value = c.inverter?.battery_capacity_kwh || 32.6;
+      document.getElementById('cfg-inv-min-soc').value = c.inverter?.battery_min_soc || 10;
+      document.getElementById('cfg-inv-max-soc').value = c.inverter?.battery_max_soc || 100;
+      
+      document.getElementById('cfg-sens-soc').value = c.sensors?.battery_soc || '';
+      document.getElementById('cfg-sens-bat-power').value = c.sensors?.battery_power || '';
+      document.getElementById('cfg-sens-grid').value = c.sensors?.grid_power || '';
+      document.getElementById('cfg-sens-load').value = c.sensors?.load_power || '';
+      document.getElementById('cfg-sens-pv').value = c.sensors?.pv_power || '';
+      document.getElementById('cfg-sens-price').value = c.sensors?.pvpc_price || '';
+      
+      document.getElementById('cfg-opt-default-soc').value = c.battery_optimization?.default_target_soc || 80;
+      document.getElementById('cfg-opt-weekends').value = c.battery_optimization?.keep_full_weekends !== false ? 'true' : 'false';
+      document.getElementById('cfg-opt-low-price').value = c.battery_optimization?.always_charge_below_price || 0.05;
+      document.getElementById('cfg-opt-high-price').value = c.battery_optimization?.never_charge_above_price || 0.15;
+      
+      document.getElementById('cfg-tariff-valle-power').value = c.tariff_periods?.valle?.contracted_power_kw || 6.9;
+      document.getElementById('cfg-tariff-valle-soc').value = c.tariff_periods?.valle?.target_soc || 100;
+      document.getElementById('cfg-tariff-llano-power').value = c.tariff_periods?.llano?.contracted_power_kw || 3.45;
+      document.getElementById('cfg-tariff-punta-power').value = c.tariff_periods?.punta?.contracted_power_kw || 3.45;
+      
+      renderLoads(c.loads || []);
+    }
+    
+    function renderLoads(loads) {
+      document.getElementById('config-loads').innerHTML = loads.map((l, i) => 
+        '<div class="load-item">' +
+          '<div class="load-header"><strong>' + (l.name || 'New Load') + '</strong><button class="remove-btn" onclick="removeLoad(' + i + ')">Remove</button></div>' +
+          '<div class="form-row">' +
+            '<input type="text" placeholder="ID" value="' + (l.id || '') + '" onchange="updateLoad(' + i + ',\\'id\\',this.value)">' +
+            '<input type="text" placeholder="Name" value="' + (l.name || '') + '" onchange="updateLoad(' + i + ',\\'name\\',this.value)">' +
+          '</div>' +
+          '<div class="form-row">' +
+            '<select onchange="updateLoad(' + i + ',\\'priority\\',this.value)">' +
+              '<option value="essential"' + (l.priority==='essential'?' selected':'') + '>Essential</option>' +
+              '<option value="comfort"' + (l.priority==='comfort'?' selected':'') + '>Comfort</option>' +
+              '<option value="accessory"' + (l.priority==='accessory'?' selected':'') + '>Accessory</option>' +
+            '</select>' +
+            '<input type="number" placeholder="Max Power (W)" value="' + (l.max_power || '') + '" onchange="updateLoad(' + i + ',\\'max_power\\',parseInt(this.value))">' +
+          '</div>' +
+          '<input type="text" placeholder="Switch Entity" value="' + (l.switch_entity || '') + '" onchange="updateLoad(' + i + ',\\'switch_entity\\',this.value)" style="margin-top:8px">' +
+        '</div>'
+      ).join('');
+    }
+    
+    function updateLoad(i, field, value) {
+      if (!currentConfig.loads) currentConfig.loads = [];
+      if (!currentConfig.loads[i]) currentConfig.loads[i] = {};
+      currentConfig.loads[i][field] = value;
+    }
+    
+    function addLoad() {
+      if (!currentConfig.loads) currentConfig.loads = [];
+      currentConfig.loads.push({ id: '', name: '', priority: 'accessory', switch_entity: '', max_power: 1000 });
+      renderLoads(currentConfig.loads);
+    }
+    
+    function removeLoad(i) {
+      currentConfig.loads.splice(i, 1);
+      renderLoads(currentConfig.loads);
+    }
+    
+    async function saveConfig() {
+      const config = {
+        inverter: {
+          max_power: parseInt(document.getElementById('cfg-inv-max-power').value),
+          battery_capacity_kwh: parseFloat(document.getElementById('cfg-inv-capacity').value),
+          battery_min_soc: parseInt(document.getElementById('cfg-inv-min-soc').value),
+          battery_max_soc: parseInt(document.getElementById('cfg-inv-max-soc').value)
+        },
+        sensors: {
+          battery_soc: document.getElementById('cfg-sens-soc').value,
+          battery_power: document.getElementById('cfg-sens-bat-power').value,
+          grid_power: document.getElementById('cfg-sens-grid').value,
+          load_power: document.getElementById('cfg-sens-load').value,
+          pv_power: document.getElementById('cfg-sens-pv').value,
+          pvpc_price: document.getElementById('cfg-sens-price').value
+        },
+        battery_optimization: {
+          enabled: true,
+          default_target_soc: parseInt(document.getElementById('cfg-opt-default-soc').value),
+          keep_full_weekends: document.getElementById('cfg-opt-weekends').value === 'true',
+          always_charge_below_price: parseFloat(document.getElementById('cfg-opt-low-price').value),
+          never_charge_above_price: parseFloat(document.getElementById('cfg-opt-high-price').value),
+          min_soc: parseInt(document.getElementById('cfg-inv-min-soc').value)
+        },
+        tariff_periods: {
+          valle: { contracted_power_kw: parseFloat(document.getElementById('cfg-tariff-valle-power').value), target_soc: parseInt(document.getElementById('cfg-tariff-valle-soc').value), charge_battery: true },
+          llano: { contracted_power_kw: parseFloat(document.getElementById('cfg-tariff-llano-power').value), target_soc: 50, charge_battery: false },
+          punta: { contracted_power_kw: parseFloat(document.getElementById('cfg-tariff-punta-power').value), target_soc: 20, charge_battery: false }
+        },
+        loads: currentConfig.loads || [],
+        load_manager: { enabled: true, safety_margin_percent: 10, check_interval_seconds: 30 }
+      };
+      
+      await fetch(base + '/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(config) });
+      alert('Configuration saved!');
     }
     
     async function setTarget() {
@@ -520,10 +721,7 @@ const html = `<!DOCTYPE html>
         refresh();
       }
     }
-    async function clearTarget() {
-      await fetch(base + '/api/target', { method: 'DELETE' });
-      refresh();
-    }
+    async function clearTarget() { await fetch(base + '/api/target', { method: 'DELETE' }); refresh(); }
     async function runBalance() { await fetch(base + '/api/balance', { method: 'POST' }); refresh(); }
     async function restoreAll() { await fetch(base + '/api/restore', { method: 'POST' }); refresh(); }
     
@@ -555,6 +753,17 @@ const server = http.createServer(async (req, res) => {
     } else if (path === '/api/status') {
       await updateState();
       res.end(JSON.stringify(state));
+    } else if (path === '/api/config' && req.method === 'GET') {
+      res.end(JSON.stringify(getConfig()));
+    } else if (path === '/api/config' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        saveUserConfig(JSON.parse(body));
+        config = getConfig();
+        res.end(JSON.stringify({ success: true }));
+      });
+      return;
     } else if (path === '/api/target' && req.method === 'POST') {
       let body = '';
       req.on('data', c => body += c);
@@ -562,37 +771,30 @@ const server = http.createServer(async (req, res) => {
         const data = JSON.parse(body || '{}');
         if (data.soc >= 10 && data.soc <= 100) {
           state.manualTargetSoc = data.soc;
-          state.manualTargetExpiry = data.expiry || null; // Optional expiry
           saveState();
-          await applyChargingDecision();
-          res.end(JSON.stringify({ success: true, targetSoc: data.soc }));
+          await applyCharging();
+          res.end(JSON.stringify({ success: true }));
         } else {
           res.statusCode = 400;
-          res.end(JSON.stringify({ error: 'SOC must be 10-100' }));
+          res.end(JSON.stringify({ error: 'Invalid SOC' }));
         }
       });
       return;
     } else if (path === '/api/target' && req.method === 'DELETE') {
       state.manualTargetSoc = null;
-      state.manualTargetExpiry = null;
       saveState();
-      await applyChargingDecision();
-      res.end(JSON.stringify({ success: true, mode: 'auto' }));
+      await applyCharging();
+      res.end(JSON.stringify({ success: true }));
     } else if (path === '/api/balance' && req.method === 'POST') {
-      const result = await balanceLoads();
-      res.end(JSON.stringify({ success: true, ...result }));
+      res.end(JSON.stringify(await balanceLoads()));
     } else if (path === '/api/restore' && req.method === 'POST') {
       for (const id of [...state.shedLoads]) {
         const load = state.loads.find(l => l.id === id);
-        if (load?.switch_entity && await turnOn(load.switch_entity)) {
-          state.shedLoads = state.shedLoads.filter(i => i !== id);
-        }
+        if (load?.switch_entity) await turnOn(load.switch_entity);
       }
+      state.shedLoads = [];
       saveState();
       res.end(JSON.stringify({ success: true }));
-    } else if (path === '/api/apply' && req.method === 'POST') {
-      const result = await applyChargingDecision();
-      res.end(JSON.stringify({ success: true, ...result }));
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -603,24 +805,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Startup
-// ─────────────────────────────────────────────────────────────────────────────
+// Auto tasks
+setInterval(() => balanceLoads(), 30000);
+setInterval(() => applyCharging(), 300000);
+setTimeout(() => applyCharging(), 5000);
 
-// Auto-balance every N seconds
-if (lm.check_interval_seconds > 0) {
-  setInterval(() => balanceLoads(), lm.check_interval_seconds * 1000);
-}
-
-// Apply charging decision every 5 min
-setInterval(() => applyChargingDecision(), 5 * 60 * 1000);
-
-// Initial apply
-setTimeout(() => applyChargingDecision(), 5000);
-
-server.listen(8099, () => {
-  console.log('⚡ Volt Load Manager running on :8099');
-  console.log(`🔋 Battery: ${inv.battery_capacity_kwh || 32.6} kWh`);
-  console.log(`📊 Optimization: ${batOpt.enabled ? 'enabled' : 'disabled'}`);
-  console.log(`🔌 Loads: ${(options.loads || []).length}`);
-});
+server.listen(8099, () => console.log('⚡ Volt Load Manager on :8099'));

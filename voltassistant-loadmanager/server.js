@@ -1170,6 +1170,7 @@ const html = `<!DOCTYPE html>
       <button class="btn secondary" onclick="exportConfig()">📤 Export</button>
       <button class="btn secondary" onclick="document.getElementById('import-file').click()">📥 Import</button>
       <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importConfig(event)">
+      <button class="btn secondary" onclick="resetConfig()" style="background:#f85149;">🗑️ Reset</button>
       <div id="config-test-result" class="sub" style="margin-top:12px;"></div>
     </div>
   </div>
@@ -1441,6 +1442,18 @@ const html = `<!DOCTYPE html>
     async function dismissAlerts() {
       await fetch(base + '/api/alerts/clear', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
       refresh();
+    }
+    
+    async function resetConfig() {
+      if (!confirm('Reset all configuration to defaults? This cannot be undone.')) return;
+      
+      try {
+        await fetch(base + '/api/config/reset', { method: 'POST' });
+        await loadConfig();
+        document.getElementById('config-test-result').innerHTML = '<span class="ok">✅ Configuration reset to defaults</span>';
+      } catch (e) {
+        alert('Error resetting: ' + e.message);
+      }
     }
     
     function exportConfig() {
@@ -2273,6 +2286,20 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: true }));
       });
       return;
+    } else if (path === '/api/config/reset' && req.method === 'POST') {
+      // Reset to default config
+      saveUserConfig({
+        inverter: { max_power: 6000, battery_capacity_kwh: 10, battery_min_soc: 10, battery_max_soc: 100 },
+        sensors: {},
+        controls: {},
+        battery_optimization: { enabled: true, default_target_soc: 80, keep_full_weekends: true, always_charge_below_price: 0.05, never_charge_above_price: 0.15, min_soc: 10 },
+        tariff_periods: { valle: { contracted_power_kw: 6.9, target_soc: 100, charge_battery: true }, llano: { contracted_power_kw: 3.45, target_soc: 50 }, punta: { contracted_power_kw: 3.45, target_soc: 20 } },
+        alerts: { low_soc: 15, high_price: 0.2, overload_percent: 90, solar_underperform: 50 },
+        ev_charging: { enabled: false },
+        loads: []
+      });
+      config = getConfig();
+      res.end(JSON.stringify({ success: true }));
     } else if (path === '/api/target' && req.method === 'POST') {
       let body = '';
       req.on('data', c => body += c);

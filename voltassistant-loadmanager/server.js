@@ -1454,6 +1454,19 @@ const html = `<!DOCTYPE html>
         document.getElementById('summary-action').textContent = action;
         document.getElementById('summary-reason').textContent = reason;
         
+        // Find next cheap hour from current state
+        const currentHour = new Date().getHours();
+        const isCheap = d.currentPeriod === 'valle' || (d.currentPrice && d.currentPrice < 0.08);
+        if (isCheap) {
+          document.getElementById('summary-next-cheap').textContent = 'Now!';
+          document.getElementById('summary-next-cheap').style.color = '#3fb950';
+        } else {
+          // Simplified: next valle starts at 00:00 or after 22:00
+          const nextValle = currentHour >= 22 ? 'Now! (Valle)' : currentHour < 8 ? 'Now! (Valle)' : '00:00';
+          document.getElementById('summary-next-cheap').textContent = nextValle;
+          document.getElementById('summary-next-cheap').style.color = '#d29922';
+        }
+        
         // Update alerts
         if (d.alerts && d.alerts.active && d.alerts.active.length > 0) {
           document.getElementById('alert-indicator').style.display = 'inline-block';

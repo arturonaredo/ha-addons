@@ -935,6 +935,75 @@ const html = `<!DOCTYPE html>
       </div>
       
       <div class="section">
+        <h3>🔔 Alerts & Notifications</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Low Battery Alert (%)</label>
+            <input type="number" id="cfg-alert-low-soc" value="15">
+            <div class="hint">Alert when SOC drops below this</div>
+          </div>
+          <div class="form-group">
+            <label>High Price Alert (€/kWh)</label>
+            <input type="number" id="cfg-alert-high-price" step="0.01" value="0.20">
+            <div class="hint">Alert when price exceeds this</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Overload Margin (%)</label>
+            <input type="number" id="cfg-alert-overload" value="90">
+            <div class="hint">Alert at this % of contracted power</div>
+          </div>
+          <div class="form-group">
+            <label>Solar Underperformance (%)</label>
+            <input type="number" id="cfg-alert-solar" value="50">
+            <div class="hint">Alert if solar is below forecast by this %</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
+        <h3>🚗 EV Charging</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Enable EV Charging</label>
+            <select id="cfg-ev-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Car SOC Sensor</label>
+            <input type="text" id="cfg-ev-soc-sensor" placeholder="sensor.car_battery_soc">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Charger Max Power (kW)</label>
+            <input type="number" id="cfg-ev-max-power" step="0.1" value="7.4">
+          </div>
+          <div class="form-group">
+            <label>Target Car SOC (%)</label>
+            <input type="number" id="cfg-ev-target-soc" value="80">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Ready By Time</label>
+            <input type="text" id="cfg-ev-ready-time" placeholder="07:30">
+            <div class="hint">Time when car should be charged</div>
+          </div>
+          <div class="form-group">
+            <label>Charge Only in Valle</label>
+            <select id="cfg-ev-valle-only">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
         <h3>🔌 Controllable Loads</h3>
         <div id="config-loads" class="load-table"></div>
         <button class="add-btn" onclick="openLoadModal(-1)">+ Add Load</button>
@@ -1456,6 +1525,20 @@ const html = `<!DOCTYPE html>
       document.getElementById('cfg-tariff-llano-power').value = c.tariff_periods?.llano?.contracted_power_kw || 3.45;
       document.getElementById('cfg-tariff-punta-power').value = c.tariff_periods?.punta?.contracted_power_kw || 3.45;
       
+      // Alerts
+      document.getElementById('cfg-alert-low-soc').value = c.alerts?.low_soc || 15;
+      document.getElementById('cfg-alert-high-price').value = c.alerts?.high_price || 0.20;
+      document.getElementById('cfg-alert-overload').value = c.alerts?.overload_percent || 90;
+      document.getElementById('cfg-alert-solar').value = c.alerts?.solar_underperform || 50;
+      
+      // EV
+      document.getElementById('cfg-ev-enabled').value = c.ev_charging?.enabled ? 'true' : 'false';
+      document.getElementById('cfg-ev-soc-sensor').value = c.ev_charging?.car_soc_sensor || '';
+      document.getElementById('cfg-ev-max-power').value = c.ev_charging?.max_charge_power_kw || 7.4;
+      document.getElementById('cfg-ev-target-soc').value = c.ev_charging?.target_soc || 80;
+      document.getElementById('cfg-ev-ready-time').value = c.ev_charging?.smart_plan_time || '07:30';
+      document.getElementById('cfg-ev-valle-only').value = c.ev_charging?.charge_in_valle !== false ? 'true' : 'false';
+      
       renderLoads(c.loads || []);
     }
     
@@ -1572,6 +1655,20 @@ const html = `<!DOCTYPE html>
           valle: { contracted_power_kw: parseFloat(document.getElementById('cfg-tariff-valle-power').value), target_soc: parseInt(document.getElementById('cfg-tariff-valle-soc').value), charge_battery: true },
           llano: { contracted_power_kw: parseFloat(document.getElementById('cfg-tariff-llano-power').value), target_soc: 50, charge_battery: false },
           punta: { contracted_power_kw: parseFloat(document.getElementById('cfg-tariff-punta-power').value), target_soc: 20, charge_battery: false }
+        },
+        alerts: {
+          low_soc: parseInt(document.getElementById('cfg-alert-low-soc').value),
+          high_price: parseFloat(document.getElementById('cfg-alert-high-price').value),
+          overload_percent: parseInt(document.getElementById('cfg-alert-overload').value),
+          solar_underperform: parseInt(document.getElementById('cfg-alert-solar').value)
+        },
+        ev_charging: {
+          enabled: document.getElementById('cfg-ev-enabled').value === 'true',
+          car_soc_sensor: document.getElementById('cfg-ev-soc-sensor').value,
+          max_charge_power_kw: parseFloat(document.getElementById('cfg-ev-max-power').value),
+          target_soc: parseInt(document.getElementById('cfg-ev-target-soc').value),
+          smart_plan_time: document.getElementById('cfg-ev-ready-time').value,
+          charge_in_valle: document.getElementById('cfg-ev-valle-only').value === 'true'
         },
         loads: currentConfig.loads || [],
         load_manager: { enabled: true, safety_margin_percent: 10, check_interval_seconds: 30 }

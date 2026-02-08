@@ -685,11 +685,32 @@ const html = `<!DOCTYPE html>
       <div class="row"><span>Next Period</span><span id="next-period">--</span></div>
     </div>
     
-    <div class="grid">
-      <div class="card"><h2>☀️ Solar</h2><div class="big" id="pv">--<span class="unit">W</span></div></div>
-      <div class="card"><h2>🏠 Load</h2><div class="big" id="load">--<span class="unit">W</span></div></div>
-      <div class="card"><h2>⚡ Grid</h2><div class="big" id="grid">--<span class="unit">W</span></div><div class="sub" id="gridDir">--</div></div>
+    <div class="card wide" style="padding:20px;">
+      <h2 style="margin-bottom:16px;">⚡ Energy Flow</h2>
+      <div style="display:flex;justify-content:space-around;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div style="text-align:center;">
+          <div style="font-size:32px;">☀️</div>
+          <div class="big" id="pv" style="font-size:24px;">--<span class="unit">W</span></div>
+          <div style="color:#8b949e;font-size:12px;">Solar</div>
+        </div>
+        <div id="flow-solar-to-load" style="font-size:20px;color:#f0883e;">→</div>
+        <div style="text-align:center;">
+          <div style="font-size:32px;">🏠</div>
+          <div class="big" id="load" style="font-size:24px;">--<span class="unit">W</span></div>
+          <div style="color:#8b949e;font-size:12px;">Load</div>
+        </div>
+        <div id="flow-grid" style="font-size:20px;color:#58a6ff;">↔</div>
+        <div style="text-align:center;">
+          <div style="font-size:32px;">⚡</div>
+          <div class="big" id="grid" style="font-size:24px;">--<span class="unit">W</span></div>
+          <div class="sub" id="gridDir" style="font-size:11px;">--</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
       <div class="card"><h2>System</h2><div class="big" id="status">--</div><div class="sub" id="health-detail">--</div></div>
+      <div class="card"><h2>🔋 Battery Power</h2><div class="big" id="bat-power">--<span class="unit">W</span></div><div class="sub" id="bat-power-dir">--</div></div>
     </div>
     
     <div class="card wide">
@@ -1357,6 +1378,16 @@ const html = `<!DOCTYPE html>
         document.getElementById('load').innerHTML = d.load.power.toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('grid').innerHTML = Math.abs(d.grid.power).toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('gridDir').textContent = d.grid.power > 50 ? '← Import' : d.grid.power < -50 ? '→ Export' : '≈ Balanced';
+        
+        // Energy flow arrows
+        document.getElementById('flow-solar-to-load').textContent = d.pv.power > 100 ? '→→' : '→';
+        document.getElementById('flow-solar-to-load').style.color = d.pv.power > 100 ? '#f0883e' : '#30363d';
+        document.getElementById('flow-grid').textContent = d.grid.power > 50 ? '←' : d.grid.power < -50 ? '→' : '↔';
+        document.getElementById('flow-grid').style.color = d.grid.power > 50 ? '#f85149' : d.grid.power < -50 ? '#3fb950' : '#30363d';
+        
+        // Battery power
+        document.getElementById('bat-power').innerHTML = Math.abs(d.battery.power || 0).toFixed(0) + '<span class="unit">W</span>';
+        document.getElementById('bat-power-dir').textContent = d.battery.power > 50 ? '⬆️ Charging' : d.battery.power < -50 ? '⬇️ Discharging' : '⏸️ Idle';
         
         // System health
         const issues = [];

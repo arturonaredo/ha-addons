@@ -191,6 +191,28 @@ rest_command:
     payload: '{"action": "charge_100"}'
 ```
 
+### Simple URL Control (GET)
+
+For simple integrations, you can use GET requests:
+
+```bash
+# Set target SOC to 80%
+curl http://YOUR_ADDON_IP:8099/api/set/target/80
+
+# Execute action
+curl http://YOUR_ADDON_IP:8099/api/set/action/charge_100
+curl http://YOUR_ADDON_IP:8099/api/set/action/auto
+```
+
+In Home Assistant:
+
+```yaml
+rest_command:
+  voltassistant_set_target:
+    url: "http://YOUR_ADDON_IP:8099/api/set/target/{{ soc }}"
+    method: GET
+```
+
 ### Sensor from Webhook
 
 ```yaml

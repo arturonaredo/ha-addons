@@ -1231,6 +1231,12 @@ const html = `<!DOCTYPE html>
           <div class="label">HA URL</div>
           <div class="value" id="dbg-ha-url">--</div>
         </div>
+        <div class="item">
+          <div class="label">Mode</div>
+          <div class="value">
+            <button class="btn" onclick="toggleDemoMode()" id="demo-toggle" style="font-size:11px;padding:4px 8px;">🎭 Demo Mode</button>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -1324,7 +1330,8 @@ const html = `<!DOCTYPE html>
     
     async function refresh() {
       try {
-        const res = await fetch(base + '/api/status');
+        const endpoint = demoMode ? '/api/demo' : '/api/status';
+        const res = await fetch(base + endpoint);
         const d = await res.json();
         
         document.getElementById('soc').textContent = d.battery.soc.toFixed(0);
@@ -2180,6 +2187,15 @@ const html = `<!DOCTYPE html>
         resultEl.innerHTML = '<span class="danger">❌ Error: ' + e.message + '</span>';
       }
       setTimeout(() => resultEl.textContent = '', 5000);
+    }
+    
+    let demoMode = false;
+    
+    function toggleDemoMode() {
+      demoMode = !demoMode;
+      document.getElementById('demo-toggle').textContent = demoMode ? '🔴 Exit Demo' : '🎭 Demo Mode';
+      document.getElementById('demo-toggle').style.background = demoMode ? '#f85149' : '';
+      refresh();
     }
     
     refresh();

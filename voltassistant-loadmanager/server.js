@@ -2254,6 +2254,39 @@ const server = http.createServer(async (req, res) => {
               message = 'Hold mode - maintaining ' + state.battery.soc + '% for 4h';
               log('success', message);
               break;
+            
+            case 'grid_charge_on':
+              // Enable grid charging immediately
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 100);
+              message = 'Grid charging enabled';
+              log('success', message);
+              break;
+            
+            case 'grid_charge_off':
+              // Disable grid charging
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 0);
+              message = 'Grid charging disabled';
+              log('success', message);
+              break;
+            
+            case 'balance_loads':
+              // Trigger load balancing
+              const result = await balanceLoads();
+              message = 'Load balancing executed: ' + (result.actions.length || 0) + ' actions';
+              log('success', message);
+              break;
+            
+            case 'restore_loads':
+              // Restore all shed loads
+              for (const id of [...state.shedLoads]) {
+                const load = state.loads.find(l => l.id === id);
+                if (load?.switch_entity) await turnOn(load.switch_entity);
+              }
+              state.shedLoads = [];
+              saveState();
+              message = 'All loads restored';
+              log('success', message);
+              break;
               
             default:
               res.statusCode = 400;

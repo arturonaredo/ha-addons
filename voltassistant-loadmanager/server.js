@@ -2546,6 +2546,71 @@ const server = http.createServer(async (req, res) => {
     // WEBHOOK ENDPOINTS (for HA automations)
     // ═══════════════════════════════════════════════════════════════════════
     
+    } else if (path === '/api/ha-config') {
+      // Generate HA configuration YAML for automations
+      const baseUrl = req.headers.host ? 'http://' + req.headers.host : 'http://localhost:8099';
+      const yaml = `# VoltAssistant - Home Assistant Configuration
+# Add these to your configuration.yaml
+
+# REST Commands for Quick Actions
+rest_command:
+  voltassistant_charge_100:
+    url: "${baseUrl}/api/quick-action"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "charge_100"}'
+  
+  voltassistant_charge_80:
+    url: "${baseUrl}/api/quick-action"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "charge_80"}'
+  
+  voltassistant_auto:
+    url: "${baseUrl}/api/quick-action"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "auto"}'
+  
+  voltassistant_night_mode:
+    url: "${baseUrl}/api/quick-action"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "night_mode"}'
+
+# Status Sensor
+sensor:
+  - platform: rest
+    name: VoltAssistant Status
+    resource: "${baseUrl}/api/webhook/ha"
+    scan_interval: 60
+    json_attributes:
+      - battery_soc
+      - target_soc
+      - current_price
+      - is_cheap_hour
+      - recommended_action
+    value_template: "{{ value_json.recommended_action }}"
+
+# Example Automation: Charge at Cheap Hours
+automation:
+  - alias: "VoltAssistant Cheap Hour Charging"
+    trigger:
+      - platform: state
+        entity_id: sensor.voltassistant_status
+        attribute: is_cheap_hour
+        to: true
+    condition:
+      - condition: numeric_state
+        entity_id: sensor.voltassistant_status
+        attribute: battery_soc
+        below: 80
+    action:
+      - service: rest_command.voltassistant_charge_100
+`;
+      res.setHeader('Content-Type', 'text/plain');
+      res.end(yaml);
+    
     } else if (path === '/api/webhook/notify') {
       // Generate notification text for HA
       try {

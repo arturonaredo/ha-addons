@@ -2695,6 +2695,34 @@ const server = http.createServer(async (req, res) => {
       await updateState();
       res.end(JSON.stringify(state));
     
+    } else if (path === '/api/speak') {
+      // Text summary for voice assistants
+      await updateState();
+      const soc = state.battery.soc?.toFixed(0) || 0;
+      const solar = state.pv.power || 0;
+      const price = state.currentPrice ? (state.currentPrice * 100).toFixed(0) : 0;
+      const period = state.currentPeriod;
+      
+      let text = `Battery is at ${soc} percent. `;
+      
+      if (solar > 100) {
+        text += `Generating ${solar} watts from solar. `;
+      }
+      
+      text += `Current electricity price is ${price} cents per kilowatt hour. `;
+      text += `We're in the ${period} tariff period. `;
+      
+      if (state.chargingDecision === 'charge') {
+        text += `Battery is charging. `;
+      }
+      
+      if (state.grid.power < -100) {
+        text += `Exporting ${Math.abs(state.grid.power)} watts to the grid. `;
+      }
+      
+      res.setHeader('Content-Type', 'text/plain');
+      res.end(text);
+    
     } else if (path === '/api/quick') {
       // Quick status for widgets and simple integrations
       res.end(JSON.stringify({

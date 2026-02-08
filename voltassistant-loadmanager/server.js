@@ -1325,7 +1325,8 @@ const html = `<!DOCTYPE html>
             </select>
           </div>
         </div>
-        <button class="btn secondary" onclick="testNotification()" style="margin-top:12px;">🔔 Send Test Notification</button>
+        <button class="btn secondary" onclick="testNotification()" style="margin-top:12px;">🔔 Test</button>
+        <button class="btn secondary" onclick="toggleDND()" id="dnd-btn" style="margin-top:12px;">🔕 DND Off</button>
         <span id="notify-test-result" class="sub" style="margin-left:12px;"></span>
       </div>
       
@@ -1681,6 +1682,38 @@ const html = `<!DOCTYPE html>
     async function dismissAlerts() {
       await fetch(base + '/api/alerts/clear', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
       refresh();
+    }
+    
+    async function toggleDND() {
+      try {
+        const statusRes = await fetch(base + '/api/dnd');
+        const status = await statusRes.json();
+        
+        const hours = status.enabled ? 0 : 8; // Toggle: if on, turn off; if off, enable for 8h
+        await fetch(base + '/api/dnd', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hours })
+        });
+        
+        const btn = document.getElementById('dnd-btn');
+        btn.textContent = hours ? '🔕 DND On' : '🔔 DND Off';
+        btn.style.background = hours ? '#f85149' : '';
+      } catch (e) {
+        console.error('DND toggle error:', e);
+      }
+    }
+    
+    async function checkDNDStatus() {
+      try {
+        const res = await fetch(base + '/api/dnd');
+        const status = await res.json();
+        const btn = document.getElementById('dnd-btn');
+        if (btn) {
+          btn.textContent = status.enabled ? '🔕 DND On' : '🔔 DND Off';
+          btn.style.background = status.enabled ? '#f85149' : '';
+        }
+      } catch (e) {}
     }
     
     async function testNotification() {
@@ -2463,6 +2496,7 @@ const html = `<!DOCTYPE html>
     
     refresh();
     setInterval(refresh, 5000);
+    checkDNDStatus();
     
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {

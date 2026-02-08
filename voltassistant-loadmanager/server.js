@@ -887,10 +887,172 @@ const html = `<!DOCTYPE html>
       padding: 2px 6px;
       border-radius: 4px;
     }
+    
+    /* OLED Dark Mode */
+    body.oled {
+      background: #000;
+    }
+    body.oled .card, body.oled .power-flow, body.oled .charging {
+      background: #0a0a0a;
+      border-color: #1a1a1a;
+    }
+    body.oled .tabs button {
+      background: #0a0a0a;
+    }
+    
+    /* Golden Hour Highlight */
+    .golden-hour {
+      background: linear-gradient(135deg, #f0883e22 0%, #d2992222 100%) !important;
+      border: 1px solid #f0883e44 !important;
+      animation: goldenPulse 2s ease-in-out infinite;
+    }
+    @keyframes goldenPulse {
+      0%, 100% { box-shadow: 0 0 0 0 #f0883e44; }
+      50% { box-shadow: 0 0 20px 5px #f0883e22; }
+    }
+    
+    /* Streak Badge */
+    .streak-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #f0883e 0%, #d29922 100%);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      animation: streakGlow 1.5s ease-in-out infinite;
+    }
+    @keyframes streakGlow {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #8b949e;
+    }
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    .empty-state h3 {
+      color: #e6edf3;
+      margin-bottom: 8px;
+    }
+    .empty-state p {
+      font-size: 14px;
+      max-width: 300px;
+      margin: 0 auto;
+    }
+    .empty-state .btn {
+      margin-top: 16px;
+    }
+    
+    /* Onboarding Wizard */
+    .wizard-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wizard-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90%;
+      text-align: center;
+    }
+    .wizard-card h2 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    .wizard-card .step-indicator {
+      color: #8b949e;
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+    .wizard-card .wizard-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+    .wizard-card p {
+      color: #8b949e;
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+    .wizard-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    
+    /* Mobile Bottom Nav */
+    @media (max-width: 600px) {
+      .tabs {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #0d1117;
+        border-top: 1px solid #30363d;
+        padding: 8px;
+        z-index: 100;
+        justify-content: space-around;
+      }
+      .tabs button {
+        font-size: 10px;
+        padding: 8px 4px;
+        flex-direction: column;
+        gap: 2px;
+      }
+      body {
+        padding-bottom: 80px;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      .power-flow {
+        flex-direction: column;
+      }
+      .power-arrow {
+        transform: rotate(90deg);
+        margin: 8px 0;
+      }
+      .gauge-container {
+        width: 140px;
+        height: 140px;
+      }
+      .gauge-value {
+        font-size: 32px;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>⚡ VoltAssistant <span id="conn-status" style="font-size:10px;vertical-align:middle;margin-left:8px;">🔴</span> <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span> <span id="last-update" style="font-size:11px;font-weight:normal;color:#8b949e;">⏱️ --</span></h1>
+  <h1>
+    ⚡ VoltAssistant 
+    <span id="conn-status" style="font-size:10px;vertical-align:middle;margin-left:4px;">🔴</span>
+    <span class="alert-badge" id="alert-indicator" style="display:none;"><span class="count" id="alert-count">0</span></span>
+    <span id="streak-display" class="streak-badge" style="display:none;margin-left:8px;">🔥 <span id="streak-count">0</span> days</span>
+    <span id="golden-badge" style="display:none;margin-left:8px;background:#f0883e33;color:#f0883e;padding:4px 8px;border-radius:12px;font-size:11px;">⭐ GOLDEN HOUR</span>
+  </h1>
+  <div style="font-size:11px;color:#8b949e;margin-bottom:12px;">
+    <span id="last-update">⏱️ --</span>
+    <button onclick="toggleOLED()" style="margin-left:12px;background:none;border:1px solid #30363d;color:#8b949e;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:10px;">🌙 OLED</button>
+  </div>
   
   <div id="alert-banner" class="alert-banner">
     <button class="dismiss" onclick="dismissAlerts()">✕</button>
@@ -1872,6 +2034,10 @@ const html = `<!DOCTYPE html>
         document.getElementById('conn-status').textContent = d.haConnection?.status === 'connected' ? '🟢' : '🔴';
         document.getElementById('conn-status').title = d.haConnection?.status === 'connected' ? 'Connected to HA' : 'Disconnected from HA';
         
+        // Golden hour check
+        updateGoldenHour(d.currentPrice, d.currentPeriod);
+        updateStreak();
+        
         // Update summary card
         let action, reason;
         if (d.chargingDecision === 'charge') {
@@ -2773,6 +2939,38 @@ const html = `<!DOCTYPE html>
     }
     
     let demoMode = false;
+    let oledMode = localStorage.getItem('oledMode') === 'true';
+    if (oledMode) document.body.classList.add('oled');
+    
+    function toggleOLED() {
+      oledMode = !oledMode;
+      document.body.classList.toggle('oled', oledMode);
+      localStorage.setItem('oledMode', oledMode);
+    }
+    
+    function updateGoldenHour(price, period) {
+      const isGolden = price < 0.06 || (period === 'valle' && price < 0.08);
+      document.getElementById('golden-badge').style.display = isGolden ? 'inline' : 'none';
+      
+      // Apply golden class to summary card
+      const summaryCard = document.getElementById('summary-card');
+      if (summaryCard) {
+        summaryCard.classList.toggle('golden-hour', isGolden);
+      }
+    }
+    
+    function updateStreak() {
+      // Get streak from localStorage or calculate from history
+      let streak = parseInt(localStorage.getItem('voltStreak') || '0');
+      const lastUpdate = localStorage.getItem('voltStreakDate');
+      const today = new Date().toDateString();
+      
+      // Show streak if > 0
+      if (streak > 0) {
+        document.getElementById('streak-display').style.display = 'inline-flex';
+        document.getElementById('streak-count').textContent = streak;
+      }
+    }
     
     function toggleDemoMode() {
       demoMode = !demoMode;
@@ -2784,6 +2982,41 @@ const html = `<!DOCTYPE html>
     refresh();
     setInterval(refresh, 5000);
     checkDNDStatus();
+    
+    // Check if first visit
+    if (!localStorage.getItem('voltOnboarded')) {
+      document.getElementById('wizard').style.display = 'flex';
+    }
+    
+    let wizardStep = 1;
+    const wizardSteps = [
+      { icon: '👋', title: 'Welcome to VoltAssistant!', text: 'Let\\'s get your solar battery system optimized in just 3 easy steps.' },
+      { icon: '🔌', title: 'Connect Your Inverter', text: 'Go to the Configuration tab and enter your Home Assistant sensor entity IDs. We support Deye, Sofar, Huawei, and more!' },
+      { icon: '⚡', title: 'You\\'re All Set!', text: 'VoltAssistant will now automatically optimize your battery charging based on electricity prices and solar forecast. Enjoy your savings!' }
+    ];
+    
+    function nextWizardStep() {
+      wizardStep++;
+      if (wizardStep > wizardSteps.length) {
+        skipWizard();
+        showTab('config');
+        return;
+      }
+      updateWizard();
+    }
+    
+    function updateWizard() {
+      const step = wizardSteps[wizardStep - 1];
+      document.getElementById('wizard-step').textContent = wizardStep;
+      document.getElementById('wizard-icon').textContent = step.icon;
+      document.getElementById('wizard-title').textContent = step.title;
+      document.getElementById('wizard-text').textContent = step.text;
+    }
+    
+    function skipWizard() {
+      localStorage.setItem('voltOnboarded', 'true');
+      document.getElementById('wizard').style.display = 'none';
+    }
     
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -2803,6 +3036,20 @@ const html = `<!DOCTYPE html>
       }
     });
   </script>
+  
+  <!-- Onboarding Wizard -->
+  <div class="wizard-overlay" id="wizard" style="display:none;">
+    <div class="wizard-card">
+      <div class="step-indicator">Step <span id="wizard-step">1</span> of 3</div>
+      <div class="wizard-icon" id="wizard-icon">👋</div>
+      <h2 id="wizard-title">Welcome to VoltAssistant!</h2>
+      <p id="wizard-text">Let's get your solar battery system optimized in just 3 easy steps.</p>
+      <div class="wizard-buttons">
+        <button class="btn secondary" onclick="skipWizard()">Skip</button>
+        <button class="btn" onclick="nextWizardStep()">Let's Go! →</button>
+      </div>
+    </div>
+  </div>
   
   <footer style="margin-top:32px;padding:24px;text-align:center;border-top:1px solid #30363d;color:#8b949e;font-size:12px;">
     <div style="margin-bottom:8px;">

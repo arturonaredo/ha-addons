@@ -304,6 +304,79 @@ scrape_configs:
     metrics_path: '/metrics'
 ```
 
+### Voice Assistant Integration
+
+```yaml
+# Alexa/Google Home via HA TTS
+automation:
+  - alias: "VoltAssistant Voice Report"
+    trigger:
+      - platform: event
+        event_type: alexa_actionable_notification
+        event_data:
+          event_id: voltassistant_status
+    action:
+      - service: rest_command.get_voltassistant_speak
+      - service: tts.speak
+        target:
+          entity_id: media_player.echo_living_room
+        data:
+          message: "{{ states.sensor.voltassistant_speak.state }}"
+
+rest_command:
+  get_voltassistant_speak:
+    url: "http://YOUR_ADDON_IP:8099/api/speak"
+    method: GET
+
+sensor:
+  - platform: rest
+    name: VoltAssistant Speak
+    resource: "http://YOUR_ADDON_IP:8099/api/speak"
+    scan_interval: 300
+```
+
+## API Reference
+
+### Core Endpoints
+- `GET /api/status` - Full system status
+- `GET /api/quick` - Compact status for widgets
+- `GET /api/speak` - Plain text for voice assistants
+
+### Control Endpoints
+- `POST /api/quick-action` - Execute actions (charge_100, charge_80, auto, etc.)
+- `POST /api/target` - Set target SOC
+- `GET/POST /api/set/target/{soc}` - Simple URL-based target
+- `GET/POST /api/set/action/{action}` - Simple URL-based action
+
+### Scheduling
+- `GET /api/schedule` - List scheduled actions
+- `POST /api/schedule` - Schedule action (at_hour or in_minutes)
+
+### Presets
+- `GET /api/presets` - List available presets
+- `POST /api/preset/{id}` - Apply preset (eco, balanced, full, export)
+
+### Forecast
+- `GET /api/forecast/solar` - Solar generation forecast
+- `GET /api/forecast/prices` - PVPC price forecast
+- `GET /api/forecast/plan` - Charging plan recommendation
+- `GET /api/forecast/all` - Combined forecast data
+
+### Notifications
+- `POST /api/notify/test` - Send test notification
+- `GET /api/dnd` - Check Do Not Disturb status
+- `POST /api/dnd` - Enable/disable DND
+
+### Stats & Reports
+- `GET /api/stats/daily` - Daily statistics
+- `GET /api/stats/summary` - Full system summary
+- `GET /api/report/daily` - Text report for notifications
+
+### Monitoring
+- `GET /health` - Health check
+- `GET /metrics` - Prometheus metrics
+- `GET /api/demo` - Demo data for UI testing
+
 ## Troubleshooting
 
 ### Add-on won't start

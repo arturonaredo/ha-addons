@@ -1616,6 +1616,21 @@ const html = `<!DOCTYPE html>
         document.getElementById('summary-action').textContent = action;
         document.getElementById('summary-reason').textContent = reason;
         
+        // Generate tip
+        let tip = '';
+        if (d.currentPrice < 0.06 && d.battery.soc < 80) {
+          tip = '💡 Tip: Price is very cheap - consider charging to 100%';
+        } else if (d.pv?.power > 2000 && d.battery.soc > 90) {
+          tip = '💡 Tip: Solar is high and battery full - run high-power appliances now';
+        } else if (d.currentPeriod === 'punta' && d.battery.soc < 30) {
+          tip = '⚠️ Warning: Peak hours with low battery - consider reducing consumption';
+        } else if (d.grid?.power < -500) {
+          tip = '💰 Earning: Exporting ' + Math.abs(d.grid.power) + 'W to grid!';
+        }
+        if (tip) {
+          document.getElementById('summary-reason').textContent = tip;
+        }
+        
         // Find next cheap hour from current state
         const currentHour = new Date().getHours();
         const isCheap = d.currentPeriod === 'valle' || (d.currentPrice && d.currentPrice < 0.08);

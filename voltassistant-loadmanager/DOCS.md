@@ -1,54 +1,82 @@
-# VoltAssistant
+# VoltAssistant - Smart Battery & Load Manager
 
-Smart battery and load management for Deye/Solarman inverters with PVPC tariffs.
+VoltAssistant is an intelligent battery optimization and load management system for Home Assistant, designed specifically for solar installations with battery storage in Spain (PVPC tariff).
 
 ## Features
 
-- **Price-based charging** - Automatically charge when electricity is cheap
-- **Tariff periods** - Full support for Spanish 2.0TD tariffs (punta/llano/valle)
-- **Manual SOC target** - Override automatic decisions when needed
-- **Load shedding** - Automatically turn off loads to prevent exceeding contracted power
-- **Weekend mode** - Option to keep battery at 100% during weekends
+### 🔋 Battery Optimization
+- **PVPC Price Optimization**: Automatically fetches electricity prices and plans charging during the cheapest hours
+- **Solar Forecast Integration**: Uses Open-Meteo to predict solar generation and optimize charging strategy
+- **Smart Charging**: Price thresholds with automatic target SOC adjustment
+- **Weekend Mode**: Keep battery full on weekends when prices are lower
+- **Manual Override**: Temporarily set a custom target SOC with auto-expiry
 
----
+### ⚡ Load Management
+- **Priority-based Load Shedding**: Essential > Comfort > Accessory
+- **2.0TD Tariff Support**: Different contracted power per period (Valle/Llano/Punta)
+- **Automatic Balancing**: Sheds non-essential loads when approaching contracted power
+- **Auto-restore**: Brings loads back online when headroom is available
+
+### 📊 Monitoring
+- **Real-time Dashboard**: Battery, solar, grid, and load power
+- **Charts**: 24-hour history of SOC, prices, and power flow
+- **Forecast Panel**: Solar and price forecasts with charging plan
+- **Debug Panel**: Entity tests, logs, and connection status
+
+### 🔌 Integration
+- **REST API**: Full API for automation and external integrations
+- **Webhooks**: HA-friendly webhooks for automations
+- **Prometheus Metrics**: `/metrics` endpoint for Grafana
+
+## Quick Start
+
+### 1. Add the Repository
+
+Go to **Settings → Add-ons → Add-on Store → ⋮ → Repositories** and add:
+
+```
+https://github.com/arturonaredo/ha-addons
+```
+
+### 2. Install VoltAssistant
+
+Find "VoltAssistant" in the add-on store and click **Install**.
+
+### 3. Configure
+
+Open the add-on configuration or use the web UI (Configuration tab) to set:
+
+- **Sensors**: Your inverter's entity IDs for SOC, power, prices, etc.
+- **Controls**: Entity IDs for charging controls
+- **Tariff Periods**: Contracted power per period
+- **Battery Optimization**: Price thresholds and preferences
+
+### 4. Start & Open Web UI
+
+Start the add-on and click "Open Web UI" to access the dashboard.
 
 ## Configuration
 
-### Inverter
+### Required Sensors
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `max_power` | Maximum inverter output (W) | 6000 |
-| `battery_capacity_kwh` | Total battery capacity (kWh) | 32.6 |
-| `battery_min_soc` | Safety floor SOC (%) | 10 |
-| `battery_max_soc` | Maximum SOC (%) | 100 |
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `sensors.battery_soc` | Battery state of charge (%) | `sensor.inverter_battery_soc` |
+| `sensors.battery_power` | Battery power (W) | `sensor.inverter_battery_power` |
+| `sensors.grid_power` | Grid import/export (W) | `sensor.inverter_grid_power` |
+| `sensors.load_power` | House consumption (W) | `sensor.inverter_load_power` |
+| `sensors.pv_power` | Solar generation (W) | `sensor.inverter_pv_power` |
+| `sensors.pvpc_price` | PVPC electricity price | `sensor.esios_pvpc` |
 
-### Sensors
+### Optional Controls
 
-Home Assistant entities to read inverter state:
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| `battery_soc` | Battery state of charge | `sensor.inverter_battery_soc` |
-| `battery_power` | Battery power (W) | `sensor.inverter_battery_power` |
-| `grid_power` | Grid power (W) | `sensor.inverter_grid_power` |
-| `load_power` | Total consumption (W) | `sensor.inverter_load_power` |
-| `pv_power` | Solar production (W) | `sensor.inverter_pv_power` |
-| `pvpc_price` | Current PVPC price | `sensor.esios_pvpc` |
-| `tariff_period` | Current tariff period | `sensor.predbat_periodo_potencia` |
-
-### Controls
-
-Entities to control the inverter:
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| `program_1_soc` | Program 1 SOC target | `number.inverter_program_1_soc` |
-| `grid_charge_start_soc` | Grid charge trigger | `number.inverter_battery_grid_charging_start` |
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `controls.program_1_soc` | Charge target SOC | `number.inverter_program_1_soc` |
+| `controls.grid_charge_start_soc` | Grid charge trigger | `number.inverter_grid_charging_start` |
+| `controls.work_mode` | Inverter work mode | `select.inverter_work_mode` |
 
 ### Tariff Periods (2.0TD)
-
-Configure contracted power and behavior per period:
 
 ```yaml
 tariff_periods:
@@ -74,105 +102,157 @@ tariff_periods:
 ```yaml
 battery_optimization:
   enabled: true
-  min_soc: 10                      # Never go below this
-  default_target_soc: 80           # Default target
-  always_charge_below_price: 0.05  # Always charge if price < €0.05
-  never_charge_above_price: 0.15   # Never charge if price > €0.15
-  keep_full_weekends: true         # 100% on weekends
+  min_soc: 10
+  default_target_soc: 80
+  always_charge_below_price: 0.05  # €/kWh
+  never_charge_above_price: 0.15   # €/kWh
+  keep_full_weekends: true
 ```
 
-### Controllable Loads
+## API Endpoints
 
-List of loads that can be turned off during overload:
+### Status & Dashboard
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
+| `/api/status` | GET | Full system status |
+| `/api/config` | GET | Current configuration |
+| `/api/config` | POST | Update configuration |
+
+### Forecasts
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/forecast/solar` | GET | Solar generation forecast |
+| `/api/forecast/prices` | GET | PVPC price forecast |
+| `/api/forecast/plan` | GET | Charging plan recommendation |
+| `/api/forecast/savings` | GET | Estimated monthly savings |
+| `/api/forecast/all` | GET | All forecasts combined |
+
+### Control
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/target` | POST | Set manual target SOC (`{"soc": 80}`) |
+| `/api/target` | DELETE | Clear manual target (auto mode) |
+| `/api/quick-action` | POST | Execute quick action |
+| `/api/balance` | POST | Trigger load balancing |
+| `/api/restore` | POST | Restore all shed loads |
+
+### Quick Actions
+
+POST to `/api/quick-action` with `{"action": "<action>"}`:
+
+| Action | Description |
+|--------|-------------|
+| `charge_100` | Charge to 100% (6h override) |
+| `charge_80` | Charge to 80% (4h override) |
+| `stop_charge` | Stop grid charging (2h) |
+| `discharge` | Enable discharge mode |
+| `auto` | Return to auto mode |
+
+### Webhooks
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/webhook/ha` | GET | HA automation-friendly status |
+| `/api/webhook/notify` | GET | Generate notification text |
+
+## Home Assistant Automation Examples
+
+### Notify on Cheap Hours
 
 ```yaml
-loads:
-  - id: heating
-    name: "Heating"
-    priority: comfort              # essential | comfort | accessory
-    power_sensor: "sensor.heating_power"
-    switch_entity: "switch.heating"
-    max_power: 3000
+automation:
+  - alias: "VoltAssistant Cheap Hour Alert"
+    trigger:
+      - platform: time_pattern
+        hours: "/1"
+    action:
+      - service: rest_command.voltassistant_check
+      - condition: template
+        value_template: "{{ states.sensor.voltassistant_is_cheap.state == 'on' }}"
+      - service: notify.mobile_app
+        data:
+          title: "⚡ Cheap Hour!"
+          message: "Electricity is cheap now. Good time to run high-power appliances."
 ```
 
-**Priorities:**
-- `essential` - Never turned off
-- `comfort` - Turned off if accessory loads aren't enough
-- `accessory` - First to be turned off
+### REST Command
 
----
-
-## Control Panel
-
-The addon adds **"VoltAssistant"** to the Home Assistant sidebar.
-
-### Panel Features:
-
-- **Current SOC** with progress bar and target marker
-- **Manual target** - Enter a % and click "Apply" to force charging
-- **Auto button** - Return to automatic mode
-- **Tariff period** - Shows active valle/llano/punta
-- **Load status** - Shows active and shed loads
-- **Balance** - Manually trigger load balancing
-- **Restore** - Turn all shed loads back on
-
----
-
-## API
-
-### Status
-```
-GET /api/status
+```yaml
+rest_command:
+  voltassistant_charge_100:
+    url: "http://YOUR_ADDON_IP:8099/api/quick-action"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "charge_100"}'
 ```
 
-### Manual Target
-```bash
-# Set target to 100%
-POST /api/target
-{"soc": 100}
+### Sensor from Webhook
 
-# Return to automatic
-DELETE /api/target
+```yaml
+sensor:
+  - platform: rest
+    name: VoltAssistant Status
+    resource: "http://YOUR_ADDON_IP:8099/api/webhook/ha"
+    scan_interval: 60
+    json_attributes:
+      - battery_soc
+      - target_soc
+      - current_price
+      - is_cheap_hour
+      - recommended_action
+    value_template: "{{ value_json.recommended_action }}"
 ```
-
-### Load Balancing
-```
-POST /api/balance
-POST /api/restore
-```
-
-### Apply Charging Decision
-```
-POST /api/apply
-```
-
----
-
-## Decision Logic
-
-The system decides when to charge following this priority:
-
-1. **Manual target** → If override is active, use that value
-2. **Weekend** → If `keep_full_weekends: true`, target 100%
-3. **Very low price** → If price < `always_charge_below_price`, target 100%
-4. **Very high price** → If price > `never_charge_above_price`, don't charge
-5. **Mid-range price** → Proportional target based on price
-6. **Tariff period** → Use the period's configured target
-
----
 
 ## Troubleshooting
 
-### Inverter won't charge
-- Verify `switch.inverter_battery_grid_charging` is ON in HA
-- Check `select.inverter_program_1_charging` is set to "Grid"
-- Review addon logs
+### Add-on won't start
 
-### Loads not shedding
-- Verify `load_manager.enabled: true`
-- Check that `switch_entity` values exist and work
-- Only `comfort` and `accessory` loads are shed, never `essential`
+1. Check the add-on logs for errors
+2. Verify `init: false` is set in config.yaml
+3. Ensure all required files exist in the add-on directory
 
-### Price not reading
-- Verify you have the PVPC/ESIOS integration configured
-- Check the price sensor exists in HA Developer Tools
+### HA Connection Failed
+
+1. Go to **Debug** tab and check connection status
+2. Click **Test All Entities** to verify sensor accessibility
+3. Ensure the add-on has access to Home Assistant API (Supervisor token)
+
+### Sensors Not Found
+
+1. Go to **Configuration** tab
+2. Enter correct entity IDs for your inverter
+3. Save and check Debug tab for errors
+
+### Charging Not Working
+
+1. Verify `controls.program_1_soc` and `controls.grid_charge_start_soc` are set
+2. Check if the inverter accepts number.set_value service
+3. Review logs in Debug tab for HA service call results
+
+## Support
+
+- **GitHub Issues**: [github.com/arturonaredo/ha-addons/issues](https://github.com/arturonaredo/ha-addons/issues)
+- **Documentation**: This page
+
+## Changelog
+
+### v1.3.0
+- Renamed to VoltAssistant
+- Added Forecast panel with solar/price predictions
+- Added Quick Actions (charge_100, charge_80, stop, discharge, auto)
+- Added webhooks for HA automations
+- Added Prometheus metrics endpoint
+- Improved Debug panel with entity testing
+
+### v1.2.0
+- Added Debug panel with connection status and logs
+- Added Charts panel with 24h history
+- Improved UI with configuration panel
+
+### v1.1.0
+- Initial release with battery optimization and load management

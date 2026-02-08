@@ -1,179 +1,183 @@
 configuration:
   inverter:
     name: Inverter Settings
-    description: Configure your inverter specifications
+    description: Configuration for your inverter and battery system
   
   inverter.max_power:
-    name: Maximum Power (W)
-    description: Maximum output power of your inverter in watts. Example: 6000 for Deye SUN-6K-EU
+    name: Max Power (W)
+    description: Maximum inverter output power in watts
   
   inverter.battery_capacity_kwh:
     name: Battery Capacity (kWh)
-    description: Total battery capacity in kilowatt-hours. Check your inverter settings or battery specs.
+    description: Total battery capacity in kilowatt-hours
   
   inverter.battery_min_soc:
     name: Minimum SOC (%)
-    description: Safety floor - battery will never discharge below this level. Recommended: 10-20%
+    description: Never discharge battery below this percentage
   
   inverter.battery_max_soc:
     name: Maximum SOC (%)
-    description: Maximum charge level. Usually 100% unless you want to preserve battery life.
+    description: Maximum charge level (usually 100%)
   
   sensors:
-    name: Home Assistant Sensors
-    description: Entity IDs of your inverter sensors in Home Assistant
+    name: Sensors
+    description: Home Assistant entity IDs for your inverter sensors
   
   sensors.battery_soc:
     name: Battery SOC Sensor
-    description: "Entity showing battery state of charge (%). Example: sensor.inverter_battery_soc"
+    description: Entity showing battery state of charge (%)
   
   sensors.battery_power:
     name: Battery Power Sensor
-    description: "Entity showing battery power in watts. Positive=charging, negative=discharging"
+    description: Entity showing battery charge/discharge power (W)
   
   sensors.battery_capacity:
-    name: Battery Capacity Sensor (optional)
-    description: "Entity showing battery capacity in kWh. Leave empty to use the value above."
+    name: Battery Capacity Sensor
+    description: (Optional) Entity showing battery capacity
   
   sensors.grid_power:
     name: Grid Power Sensor
-    description: "Entity showing grid power in watts. Positive=importing, negative=exporting"
+    description: Entity showing grid import/export power (W). Positive = import, negative = export.
   
   sensors.load_power:
     name: Load Power Sensor
-    description: Entity showing total home consumption in watts
+    description: Entity showing total house consumption (W)
   
   sensors.pv_power:
     name: Solar Power Sensor
-    description: Entity showing current solar production in watts
+    description: Entity showing solar panel generation (W)
   
   sensors.pvpc_price:
     name: PVPC Price Sensor
-    description: "Entity showing current electricity price in €/kWh. Example: sensor.esios_pvpc"
+    description: Entity showing current electricity price (€/kWh). Use esios integration.
   
   sensors.tariff_period:
-    name: Tariff Period Sensor (optional)
-    description: "Entity showing current period (valle/llano/punta). Leave empty for auto-detection."
+    name: Tariff Period Sensor
+    description: (Optional) Entity showing current tariff period (valle/llano/punta)
   
   controls:
-    name: Inverter Controls
-    description: Entity IDs to control your inverter settings
+    name: Controls
+    description: Home Assistant entity IDs for inverter controls
   
   controls.work_mode:
     name: Work Mode Select
-    description: "Select entity to change inverter mode. Example: select.inverter_work_mode"
+    description: (Optional) Select entity to change inverter work mode
   
   controls.grid_charge_start_soc:
     name: Grid Charge Start SOC
-    description: "Number entity to set when grid charging starts. Example: number.inverter_battery_grid_charging_start"
+    description: Number entity to set SOC threshold for grid charging
   
   controls.program_1_soc:
-    name: Program 1 SOC Target
-    description: "Number entity to set program 1 target SOC. Example: number.inverter_program_1_soc"
+    name: Program 1 Target SOC
+    description: Number entity to set charging target SOC
   
   controls.program_1_time:
     name: Program 1 Time
-    description: "Time entity for program 1 start. Example: time.inverter_program_1_time"
+    description: (Optional) Time entity for charging program
   
   controls.program_2_soc:
-    name: Program 2 SOC Target
-    description: Number entity to set program 2 target SOC
+    name: Program 2 Target SOC
+    description: (Optional) Number entity for second charging program
   
   controls.program_2_time:
     name: Program 2 Time
-    description: Time entity for program 2 start
+    description: (Optional) Time entity for second program
   
   tariff_periods:
-    name: Tariff Periods (2.0TD)
-    description: Configure contracted power and charging behavior per tariff period
+    name: Tariff Periods
+    description: Spanish 2.0TD tariff configuration with different contracted power per period
   
   tariff_periods.valle:
-    name: Off-Peak (Valle)
-    description: "Cheapest period. Weekdays 00:00-08:00 and all weekend"
+    name: Valle (Off-peak)
+    description: Nighttime period (00:00-08:00), all day on weekends
   
   tariff_periods.valle.hours:
     name: Hours
-    description: "Time ranges for this period. Example: 00:00-08:00"
+    description: Time range for this period (e.g., "00:00-08:00")
   
   tariff_periods.valle.contracted_power_kw:
     name: Contracted Power (kW)
-    description: Your contracted power limit for this period in kilowatts
+    description: Your contracted power for this period
   
   tariff_periods.valle.charge_battery:
     name: Charge Battery
-    description: Enable grid charging during this period
+    description: Whether to charge battery during this period
   
   tariff_periods.valle.target_soc:
     name: Target SOC (%)
-    description: Target battery level for this period
+    description: Target battery SOC during this period
   
   tariff_periods.llano:
-    name: Mid-Peak (Llano)
-    description: "Medium price period. Weekdays 08:00-10:00, 14:00-18:00, 22:00-00:00"
+    name: Llano (Mid-peak)
+    description: Shoulder hours with medium prices
   
   tariff_periods.llano.hours:
     name: Hours
-    description: Time ranges for this period
+    description: Time range for this period
   
   tariff_periods.llano.contracted_power_kw:
     name: Contracted Power (kW)
-    description: Your contracted power limit for this period
+    description: Your contracted power for this period
   
   tariff_periods.llano.charge_battery:
     name: Charge Battery
-    description: Enable grid charging during this period
+    description: Whether to charge battery during this period
   
   tariff_periods.llano.target_soc:
     name: Target SOC (%)
-    description: Target battery level for this period
+    description: Target battery SOC during this period
   
   tariff_periods.punta:
-    name: Peak (Punta)
-    description: "Most expensive period. Weekdays 10:00-14:00, 18:00-22:00"
+    name: Punta (Peak)
+    description: Peak hours with highest prices
   
   tariff_periods.punta.hours:
     name: Hours
-    description: Time ranges for this period
+    description: Time range for this period
   
   tariff_periods.punta.contracted_power_kw:
     name: Contracted Power (kW)
-    description: Your contracted power limit for this period
+    description: Your contracted power for this period
   
   tariff_periods.punta.charge_battery:
     name: Charge Battery
-    description: Enable grid charging during this period (usually disabled)
+    description: Usually false - avoid charging during peak
   
   tariff_periods.punta.target_soc:
     name: Target SOC (%)
-    description: Target battery level for this period
+    description: Target battery SOC during this period
   
   loads:
     name: Controllable Loads
-    description: Devices that can be turned off to prevent overload
+    description: Devices that can be turned off to manage power consumption
   
-  loads.id:
-    name: Unique ID
-    description: "Short identifier for this load. Example: ev_charger"
+  loads[].id:
+    name: Load ID
+    description: Unique identifier for this load (lowercase, no spaces)
   
-  loads.name:
+  loads[].name:
     name: Display Name
-    description: "Friendly name shown in the UI. Example: EV Charger"
+    description: Human-readable name shown in the UI
   
-  loads.priority:
+  loads[].priority:
     name: Priority
-    description: "essential=never off, comfort=reduce if needed, accessory=first to shed"
+    description: |
+      Load priority for shedding:
+      - essential: Never turn off (fridges, medical)
+      - comfort: Turn off if needed (AC, heating)
+      - accessory: First to shed (pool pumps, EV charging)
   
-  loads.power_sensor:
-    name: Power Sensor (optional)
-    description: Entity showing current power consumption of this load
+  loads[].power_sensor:
+    name: Power Sensor
+    description: (Optional) Entity showing current power consumption
   
-  loads.switch_entity:
+  loads[].switch_entity:
     name: Switch Entity
-    description: Switch entity to turn this load on/off
+    description: Switch entity to control this load
   
-  loads.max_power:
+  loads[].max_power:
     name: Max Power (W)
-    description: Maximum expected power consumption in watts
+    description: Maximum expected power consumption
   
   ev_charging:
     name: EV Charging
@@ -185,43 +189,43 @@ configuration:
   
   ev_charging.car_soc_sensor:
     name: Car SOC Sensor
-    description: Entity showing car battery state of charge
+    description: Entity showing car battery SOC (%)
   
   ev_charging.car_charging_slot:
     name: Charging Slot Sensor
-    description: Binary sensor indicating if car should be charging now
+    description: Binary sensor indicating if it's a good time to charge
   
   ev_charging.charge_in_valle:
-    name: Charge in Off-Peak
-    description: Prefer charging during valle (off-peak) hours
+    name: Charge Only in Valle
+    description: Only charge the car during off-peak hours
   
   ev_charging.max_charge_power_kw:
     name: Max Charge Power (kW)
-    description: Maximum charging power of your charger
+    description: Maximum charger power (e.g., 7.4 for 7.4kW charger)
   
   ev_charging.target_soc:
     name: Target SOC (%)
-    description: Target car battery level
+    description: Target car battery SOC
   
   ev_charging.smart_plan_time:
     name: Ready By Time
-    description: "Time when car should be charged by. Example: 07:30"
+    description: Time when the car should be charged to target SOC
   
   load_manager:
     name: Load Manager
-    description: Automatic load shedding to prevent exceeding contracted power
+    description: Automatic load balancing settings
   
   load_manager.enabled:
     name: Enable Load Manager
-    description: Turn on automatic load shedding when power limit is exceeded
+    description: Enable automatic load shedding when approaching contracted power
   
   load_manager.safety_margin_percent:
     name: Safety Margin (%)
-    description: Start shedding loads at this percentage below limit. 10% means shed at 90% usage.
+    description: Percentage below contracted power to trigger load shedding (e.g., 10% = shed at 90%)
   
   load_manager.check_interval_seconds:
     name: Check Interval (seconds)
-    description: How often to check power usage and balance loads
+    description: How often to check and balance loads
   
   battery_optimization:
     name: Battery Optimization
@@ -229,7 +233,7 @@ configuration:
   
   battery_optimization.enabled:
     name: Enable Optimization
-    description: Turn on smart battery charging decisions
+    description: Enable price-based charging optimization
   
   battery_optimization.min_soc:
     name: Minimum SOC (%)
@@ -237,16 +241,16 @@ configuration:
   
   battery_optimization.default_target_soc:
     name: Default Target SOC (%)
-    description: Default target when no other rule applies
+    description: Target SOC when no special conditions apply
   
   battery_optimization.always_charge_below_price:
     name: Always Charge Below (€/kWh)
-    description: "Always charge to 100% when price is below this. Example: 0.05"
+    description: Charge to 100% when price is below this (e.g., 0.05)
   
   battery_optimization.never_charge_above_price:
     name: Never Charge Above (€/kWh)
-    description: "Never charge from grid when price is above this. Example: 0.15"
+    description: Don't charge from grid when price is above this (e.g., 0.15)
   
   battery_optimization.keep_full_weekends:
     name: Keep Full on Weekends
-    description: Maintain 100% battery during weekends (all valle hours)
+    description: Maintain 100% SOC on weekends (all valle period)

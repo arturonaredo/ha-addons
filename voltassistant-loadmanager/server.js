@@ -2365,6 +2365,56 @@ const server = http.createServer(async (req, res) => {
         res.statusCode = 400;
         res.end(JSON.stringify({ success: false, error: 'Usage: /api/set/target/{10-100} or /api/set/action/{action}' }));
       }
+    
+    } else if (path === '/api/schedule' && req.method === 'POST') {
+      // Schedule an action for later
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', async () => {
+        try {
+          const { action, target_soc, at_hour, in_minutes } = JSON.parse(body || '{}');
+          
+          let delayMs;
+          if (in_minutes) {
+            delayMs = in_minutes * 60 * 1000;
+          } else if (at_hour !== undefined) {
+            const now = new Date();
+            const target = new Date(now);
+            target.setHours(at_hour, 0, 0, 0);
+            if (target <= now) target.setDate(target.getDate() + 1);
+            delayMs = target - now;
+          } else {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ success: false, error: 'Provide at_hour or in_minutes' }));
+            return;
+          }
+          
+          const scheduledTime = new Date(Date.now() + delayMs);
+          
+          setTimeout(async () => {
+            if (action === 'charge_100') state.manualTargetSoc = 100;
+            else if (action === 'charge_80') state.manualTargetSoc = 80;
+            else if (action === 'auto') { state.manualTargetSoc = null; state.manualTargetExpiry = null; }
+            else if (target_soc) state.manualTargetSoc = target_soc;
+            
+            if (state.manualTargetSoc !== null) {
+              state.manualTargetExpiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+            }
+            saveState();
+            await applyCharging();
+            log('success', 'Scheduled action executed: ' + (action || 'target ' + target_soc));
+          }, delayMs);
+          
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Scheduled for ' + scheduledTime.toLocaleTimeString(),
+            scheduledAt: scheduledTime.toISOString()
+          }));
+        } catch (e) {
+          res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
     } else if (path === '/api/config' && req.method === 'GET') {
       res.end(JSON.stringify(getConfig()));
     } else if (path === '/api/config' && req.method === 'POST') {

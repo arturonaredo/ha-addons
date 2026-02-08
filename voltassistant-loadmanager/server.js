@@ -96,6 +96,13 @@ let dndUntil = null;
 // Action history
 const actionHistory = [];
 
+// Energy goals
+let energyGoals = {
+  dailyExportKwh: null,
+  dailySolarKwh: null,
+  maxGridImportKwh: null
+};
+
 // Battery optimization presets
 const PRESETS = {
   'eco': { name: 'Eco Mode', target: 50, description: 'Minimal charging, maximize self-consumption' },
@@ -3260,6 +3267,20 @@ const server = http.createServer(async (req, res) => {
       };
       
       res.end(JSON.stringify({ success: true, ...comparison }));
+    
+    } else if (path === '/api/goals' && req.method === 'GET') {
+      res.end(JSON.stringify({ success: true, goals: energyGoals }));
+    
+    } else if (path === '/api/goals' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const goals = JSON.parse(body || '{}');
+        energyGoals = { ...energyGoals, ...goals };
+        log('success', 'Energy goals updated', energyGoals);
+        res.end(JSON.stringify({ success: true, goals: energyGoals }));
+      });
+      return;
     
     // ═══════════════════════════════════════════════════════════════════════
     // WEBHOOK ENDPOINTS (for HA automations)

@@ -439,6 +439,9 @@ function checkAlerts() {
     state.alerts.active.push(alert);
     state.alerts.history.unshift(alert);
     log('warn', 'Alert triggered: ' + alert.message, { type: alert.type });
+    
+    // Send webhook notification if enabled
+    sendWebhookNotification(alert);
   }
   
   // Keep history limited
@@ -447,6 +450,41 @@ function checkAlerts() {
   }
   
   return newAlerts;
+}
+
+async function sendWebhookNotification(alert) {
+  const notify = config.notifications || {};
+  if (!notify.enabled || !notify.webhook_url) return;
+  
+  // Check if we should send this type of notification
+  if (alert.type === 'low_soc' && !notify.on_low_soc) return;
+  
+  try {
+    const payload = {
+      title: '⚡ VoltAssistant Alert',
+      message: alert.message,
+      type: alert.type,
+      severity: alert.severity,
+      value: alert.value,
+      threshold: alert.threshold,
+      timestamp: alert.timestamp,
+      state: {
+        soc: state.battery.soc,
+        price: state.currentPrice,
+        period: state.currentPeriod
+      }
+    };
+    
+    await fetch(notify.webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    log('success', 'Webhook notification sent: ' + alert.type);
+  } catch (e) {
+    log('error', 'Webhook notification failed', { error: e.message });
+  }
 }
 
 async function balanceLoads() {

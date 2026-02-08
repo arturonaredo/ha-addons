@@ -144,7 +144,8 @@ let state = {
   loads: [],
   lastAction: null,
   lastCheck: null,
-  haConnection: { status: 'unknown', lastSuccess: null, lastError: null }
+  haConnection: { status: 'unknown', lastSuccess: null, lastError: null },
+  alerts: { active: [], history: [] }
 };
 
 // Load persistent state
@@ -367,9 +368,85 @@ async function updateState() {
   }
   
   decideCharging();
+  checkAlerts();
   state.lastCheck = new Date().toISOString();
   
   log('success', 'State updated', { soc, price: state.currentPrice, period: state.currentPeriod });
+}
+
+// Check and generate alerts
+function checkAlerts() {
+  const alerts = config.alerts || {};
+  const newAlerts = [];
+  const now = new Date().toISOString();
+  
+  // Low battery alert
+  if (alerts.low_soc && state.battery.soc < alerts.low_soc) {
+    const existing = state.alerts.active.find(a => a.type === 'low_soc');
+    if (!existing) {
+      newAlerts.push({
+        id: 'low_soc_' + Date.now(),
+        type: 'low_soc',
+        severity: 'warning',
+        message: `Battery low: ${state.battery.soc}% (threshold: ${alerts.low_soc}%)`,
+        value: state.battery.soc,
+        threshold: alerts.low_soc,
+        timestamp: now
+      });
+    }
+  } else {
+    state.alerts.active = state.alerts.active.filter(a => a.type !== 'low_soc');
+  }
+  
+  // High price alert
+  if (alerts.high_price && state.currentPrice && state.currentPrice > alerts.high_price) {
+    const existing = state.alerts.active.find(a => a.type === 'high_price');
+    if (!existing) {
+      newAlerts.push({
+        id: 'high_price_' + Date.now(),
+        type: 'high_price',
+        severity: 'info',
+        message: `Price high: ${(state.currentPrice * 100).toFixed(1)}¢ (threshold: ${(alerts.high_price * 100).toFixed(1)}¢)`,
+        value: state.currentPrice,
+        threshold: alerts.high_price,
+        timestamp: now
+      });
+    }
+  } else {
+    state.alerts.active = state.alerts.active.filter(a => a.type !== 'high_price');
+  }
+  
+  // Overload alert
+  if (alerts.overload_percent && state.usagePercent > alerts.overload_percent) {
+    const existing = state.alerts.active.find(a => a.type === 'overload');
+    if (!existing) {
+      newAlerts.push({
+        id: 'overload_' + Date.now(),
+        type: 'overload',
+        severity: 'danger',
+        message: `Power usage high: ${state.usagePercent.toFixed(0)}% (threshold: ${alerts.overload_percent}%)`,
+        value: state.usagePercent,
+        threshold: alerts.overload_percent,
+        timestamp: now
+      });
+    }
+  } else {
+    state.alerts.active = state.alerts.active.filter(a => a.type !== 'overload');
+  }
+  
+  // Add new alerts to active and history
+  for (const alert of newAlerts) {
+    state.alerts.active.push(alert);
+    state.alerts.history.unshift(alert);
+    log('warn', 'Alert triggered: ' + alert.message, { type: alert.type });
+  }
+  
+  // Keep history limited
+  if (state.alerts.history.length > 100) {
+    state.alerts.history = state.alerts.history.slice(0, 100);
+  }
+  
+  return newAlerts;
 }
 
 async function balanceLoads() {
@@ -2247,6 +2324,44 @@ const server = http.createServer(async (req, res) => {
           chargingSlot: state.carChargingSlot
         }
       }));
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // ALERTS ENDPOINTS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    } else if (path === '/api/alerts') {
+      res.end(JSON.stringify({
+        success: true,
+        active: state.alerts.active,
+        count: state.alerts.active.length
+      }));
+    
+    } else if (path === '/api/alerts/history') {
+      res.end(JSON.stringify({
+        success: true,
+        history: state.alerts.history,
+        count: state.alerts.history.length
+      }));
+    
+    } else if (path === '/api/alerts/clear' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const { id, type } = JSON.parse(body || '{}');
+          if (id) {
+            state.alerts.active = state.alerts.active.filter(a => a.id !== id);
+          } else if (type) {
+            state.alerts.active = state.alerts.active.filter(a => a.type !== type);
+          } else {
+            state.alerts.active = [];
+          }
+          res.end(JSON.stringify({ success: true, remaining: state.alerts.active.length }));
+        } catch (e) {
+          res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
     
     } else {
       res.statusCode = 404;

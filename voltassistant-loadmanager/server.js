@@ -732,6 +732,105 @@ const html = `<!DOCTYPE html>
     .alert-banner .alert-items { font-size: 13px; color: #e6edf3; }
     .alert-banner .dismiss { background: none; border: none; color: #8b949e; cursor: pointer; float: right; font-size: 16px; }
     .alert-banner .dismiss:hover { color: #f85149; }
+    
+    /* Power Flow Animation */
+    .power-flow {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0;
+      padding: 24px 16px;
+      background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+      border-radius: 16px;
+      border: 1px solid #30363d;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .power-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 16px;
+      min-width: 80px;
+    }
+    .power-node .icon {
+      font-size: 36px;
+      margin-bottom: 4px;
+      filter: drop-shadow(0 0 8px currentColor);
+    }
+    .power-node .value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #e6edf3;
+    }
+    .power-node .label {
+      font-size: 11px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .power-node.solar .icon { color: #f0883e; }
+    .power-node.battery .icon { color: #3fb950; }
+    .power-node.home .icon { color: #58a6ff; }
+    .power-node.grid .icon { color: #a371f7; }
+    
+    .power-arrow {
+      display: flex;
+      align-items: center;
+      width: 60px;
+      height: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+    .power-arrow .line {
+      width: 100%;
+      height: 3px;
+      background: #30363d;
+      position: relative;
+      border-radius: 2px;
+    }
+    .power-arrow .dot {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      top: -2.5px;
+    }
+    .power-arrow.active .line { background: #3fb95066; }
+    .power-arrow.active .dot {
+      background: #3fb950;
+      box-shadow: 0 0 8px #3fb950;
+      animation: flowRight 1s linear infinite;
+    }
+    .power-arrow.active.reverse .dot {
+      animation: flowLeft 1s linear infinite;
+    }
+    .power-arrow.importing .line { background: #f8514966; }
+    .power-arrow.importing .dot {
+      background: #f85149;
+      box-shadow: 0 0 8px #f85149;
+    }
+    .power-arrow.exporting .line { background: #3fb95066; }
+    .power-arrow.exporting .dot {
+      background: #3fb950;
+      box-shadow: 0 0 8px #3fb950;
+    }
+    
+    @keyframes flowRight {
+      0% { left: 0%; opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { left: 100%; opacity: 0; }
+    }
+    @keyframes flowLeft {
+      0% { left: 100%; opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { left: 0%; opacity: 0; }
+    }
+    
+    .power-arrow .dot:nth-child(2) { animation-delay: 0.33s; }
+    .power-arrow .dot:nth-child(3) { animation-delay: 0.66s; }
   </style>
 </head>
 <body>
@@ -807,32 +906,60 @@ const html = `<!DOCTYPE html>
       <div class="row"><span>Price Quality</span><span id="price-quality">--</span></div>
     </div>
     
-    <div class="card wide" style="padding:20px;">
-      <h2 style="margin-bottom:16px;">⚡ Energy Flow</h2>
-      <div style="display:flex;justify-content:space-around;align-items:center;flex-wrap:wrap;gap:16px;">
-        <div style="text-align:center;">
-          <div style="font-size:32px;">☀️</div>
-          <div class="big" id="pv" style="font-size:24px;">--<span class="unit">W</span></div>
-          <div style="color:#8b949e;font-size:12px;">Solar</div>
+    <!-- ANIMATED POWER FLOW -->
+    <div class="power-flow">
+      <div class="power-node solar">
+        <div class="icon">☀️</div>
+        <div class="value" id="pv">--<span class="unit">W</span></div>
+        <div class="label">Solar</div>
+      </div>
+      
+      <div class="power-arrow" id="arrow-solar">
+        <div class="line">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
         </div>
-        <div id="flow-solar-to-load" style="font-size:20px;color:#f0883e;">→</div>
-        <div style="text-align:center;">
-          <div style="font-size:32px;">🏠</div>
-          <div class="big" id="load" style="font-size:24px;">--<span class="unit">W</span></div>
-          <div style="color:#8b949e;font-size:12px;">Load</div>
+      </div>
+      
+      <div class="power-node home">
+        <div class="icon">🏠</div>
+        <div class="value" id="load">--<span class="unit">W</span></div>
+        <div class="label">Home</div>
+      </div>
+      
+      <div class="power-arrow" id="arrow-battery">
+        <div class="line">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
         </div>
-        <div id="flow-grid" style="font-size:20px;color:#58a6ff;">↔</div>
-        <div style="text-align:center;">
-          <div style="font-size:32px;">⚡</div>
-          <div class="big" id="grid" style="font-size:24px;">--<span class="unit">W</span></div>
-          <div class="sub" id="gridDir" style="font-size:11px;">--</div>
+      </div>
+      
+      <div class="power-node battery">
+        <div class="icon">🔋</div>
+        <div class="value" id="bat-power">--<span class="unit">W</span></div>
+        <div class="label" id="bat-power-dir">Battery</div>
+      </div>
+      
+      <div class="power-arrow" id="arrow-grid">
+        <div class="line">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
         </div>
+      </div>
+      
+      <div class="power-node grid">
+        <div class="icon">⚡</div>
+        <div class="value" id="grid">--<span class="unit">W</span></div>
+        <div class="label" id="gridDir">Grid</div>
       </div>
     </div>
     
     <div class="grid" style="grid-template-columns:1fr 1fr;">
       <div class="card"><h2>System</h2><div class="big" id="status">--</div><div class="sub" id="health-detail">--</div></div>
-      <div class="card"><h2>🔋 Battery Power</h2><div class="big" id="bat-power">--<span class="unit">W</span></div><div class="sub" id="bat-power-dir">--</div></div>
+      <div class="card"><h2>💰 Savings</h2><div class="big ok" id="savings-today">0.00<span class="unit">€</span></div><div class="sub">Today's estimated savings</div></div>
     </div>
     
     <div class="card wide">
@@ -1582,17 +1709,42 @@ const html = `<!DOCTYPE html>
         document.getElementById('pv').innerHTML = d.pv.power.toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('load').innerHTML = d.load.power.toFixed(0) + '<span class="unit">W</span>';
         document.getElementById('grid').innerHTML = Math.abs(d.grid.power).toFixed(0) + '<span class="unit">W</span>';
-        document.getElementById('gridDir').textContent = d.grid.power > 50 ? '← Import' : d.grid.power < -50 ? '→ Export' : '≈ Balanced';
+        document.getElementById('gridDir').textContent = d.grid.power > 50 ? 'Importing' : d.grid.power < -50 ? 'Exporting' : 'Balanced';
         
-        // Energy flow arrows
-        document.getElementById('flow-solar-to-load').textContent = d.pv.power > 100 ? '→→' : '→';
-        document.getElementById('flow-solar-to-load').style.color = d.pv.power > 100 ? '#f0883e' : '#30363d';
-        document.getElementById('flow-grid').textContent = d.grid.power > 50 ? '←' : d.grid.power < -50 ? '→' : '↔';
-        document.getElementById('flow-grid').style.color = d.grid.power > 50 ? '#f85149' : d.grid.power < -50 ? '#3fb950' : '#30363d';
+        // Animated power flow arrows
+        const arrowSolar = document.getElementById('arrow-solar');
+        const arrowBattery = document.getElementById('arrow-battery');
+        const arrowGrid = document.getElementById('arrow-grid');
         
-        // Battery power
-        document.getElementById('bat-power').innerHTML = Math.abs(d.battery.power || 0).toFixed(0) + '<span class="unit">W</span>';
-        document.getElementById('bat-power-dir').textContent = d.battery.power > 50 ? '⬆️ Charging' : d.battery.power < -50 ? '⬇️ Discharging' : '⏸️ Idle';
+        // Solar arrow - active when generating
+        arrowSolar.className = 'power-arrow' + (d.pv?.power > 50 ? ' active' : '');
+        
+        // Battery arrow - direction based on charge/discharge
+        if (d.battery?.power > 50) {
+          arrowBattery.className = 'power-arrow active'; // Charging
+        } else if (d.battery?.power < -50) {
+          arrowBattery.className = 'power-arrow active reverse'; // Discharging
+        } else {
+          arrowBattery.className = 'power-arrow';
+        }
+        
+        // Grid arrow - import/export
+        if (d.grid?.power > 50) {
+          arrowGrid.className = 'power-arrow active importing reverse'; // Importing from grid
+        } else if (d.grid?.power < -50) {
+          arrowGrid.className = 'power-arrow active exporting'; // Exporting to grid
+        } else {
+          arrowGrid.className = 'power-arrow';
+        }
+        
+        // Battery power display
+        document.getElementById('bat-power').innerHTML = Math.abs(d.battery?.power || 0).toFixed(0) + '<span class="unit">W</span>';
+        document.getElementById('bat-power-dir').textContent = d.battery?.power > 50 ? '⬆️ Charging' : d.battery?.power < -50 ? '⬇️ Discharging' : 'Idle';
+        
+        // Today's savings estimate (simplified)
+        const savedKwh = (d.pv?.power || 0) / 1000 * 0.5; // rough estimate
+        const savedEur = savedKwh * (d.currentPrice || 0.12);
+        document.getElementById('savings-today').innerHTML = savedEur.toFixed(2) + '<span class="unit">€</span>';
         
         // System health
         const issues = [];

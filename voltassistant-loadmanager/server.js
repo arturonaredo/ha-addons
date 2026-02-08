@@ -1172,6 +1172,40 @@ const html = `<!DOCTYPE html>
       </div>
       
       <div class="section">
+        <h3>🔔 Notifications (Webhook)</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Enable Notifications</label>
+            <select id="cfg-notify-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Webhook URL</label>
+            <input type="text" id="cfg-notify-url" placeholder="https://your-webhook-url.com/notify">
+            <div class="hint">POST requests with JSON payload</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Notify on Low SOC</label>
+            <select id="cfg-notify-low-soc">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Notify on Cheap Hours</label>
+            <select id="cfg-notify-cheap">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="section">
         <h3>🔌 Controllable Loads</h3>
         <div id="config-loads" class="load-table"></div>
         <button class="add-btn" onclick="openLoadModal(-1)">+ Add Load</button>
@@ -2006,6 +2040,12 @@ const html = `<!DOCTYPE html>
       document.getElementById('cfg-ev-ready-time').value = c.ev_charging?.smart_plan_time || '07:30';
       document.getElementById('cfg-ev-valle-only').value = c.ev_charging?.charge_in_valle !== false ? 'true' : 'false';
       
+      // Notifications
+      document.getElementById('cfg-notify-enabled').value = c.notifications?.enabled ? 'true' : 'false';
+      document.getElementById('cfg-notify-url').value = c.notifications?.webhook_url || '';
+      document.getElementById('cfg-notify-low-soc').value = c.notifications?.on_low_soc !== false ? 'true' : 'false';
+      document.getElementById('cfg-notify-cheap').value = c.notifications?.on_cheap_hours !== false ? 'true' : 'false';
+      
       renderLoads(c.loads || []);
     }
     
@@ -2142,6 +2182,12 @@ const html = `<!DOCTYPE html>
           target_soc: parseInt(document.getElementById('cfg-ev-target-soc').value),
           smart_plan_time: document.getElementById('cfg-ev-ready-time').value,
           charge_in_valle: document.getElementById('cfg-ev-valle-only').value === 'true'
+        },
+        notifications: {
+          enabled: document.getElementById('cfg-notify-enabled').value === 'true',
+          webhook_url: document.getElementById('cfg-notify-url').value,
+          on_low_soc: document.getElementById('cfg-notify-low-soc').value === 'true',
+          on_cheap_hours: document.getElementById('cfg-notify-cheap').value === 'true'
         },
         loads: currentConfig.loads || [],
         load_manager: { enabled: true, safety_margin_percent: 10, check_interval_seconds: 30 }

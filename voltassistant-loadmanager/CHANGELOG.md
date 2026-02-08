@@ -2,6 +2,43 @@
 
 All notable changes to VoltAssistant will be documented in this file.
 
+## [1.5.0] - 2026-02-08
+
+### Added
+
+#### Quick Actions
+- **Vacation Mode**: 30% SOC for 7 days
+- **Storm Mode**: 100% SOC for 48h (outage prep)
+- **Battery Presets**: Eco, Balanced, Full, Export
+
+#### Notifications
+- **Webhook Notifications**: Configurable webhook URL
+- **Test Notification**: Button to verify webhooks
+- **Do Not Disturb**: Suppress notifications temporarily
+- **Alert History**: View and clear past alerts
+
+#### Forecast Enhancements
+- **Daily Cost Estimate**: Based on grid import needs
+- **Sunrise/Sunset**: Calculated from solar data
+- **Price Quality**: Excellent/Good/Average/Expensive indicator
+
+#### Smart Features
+- **Smart Tips**: Context-aware suggestions in summary
+- **Schedule Tracking**: List and manage scheduled actions
+
+#### API
+- `/api/quick`: Compact status for widgets
+- `/api/speak`: Plain text for voice assistants
+- `/api/presets`: List battery presets
+- `/api/preset/{id}`: Apply preset
+- `/api/dnd`: Do Not Disturb control
+- `/api/notify/test`: Test webhook
+- `/api/schedule` (GET): List scheduled actions
+
+### Changed
+- Improved documentation with full API reference
+- Added voice assistant integration examples
+
 ## [1.4.0] - 2026-02-08
 
 ### Added

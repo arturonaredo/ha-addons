@@ -1431,7 +1431,11 @@ const html = `<!DOCTYPE html>
           document.getElementById('alert-indicator').style.display = 'none';
           document.getElementById('alert-banner').classList.remove('show');
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error(e);
+        document.getElementById('conn-status').textContent = '🔴';
+        document.getElementById('conn-status').title = 'Error: ' + e.message;
+      }
     }
     
     async function dismissAlerts() {

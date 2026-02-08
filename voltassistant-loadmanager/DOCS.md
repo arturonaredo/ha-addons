@@ -208,6 +208,80 @@ sensor:
     value_template: "{{ value_json.recommended_action }}"
 ```
 
+### Morning Report Automation
+
+```yaml
+automation:
+  - alias: "VoltAssistant Morning Report"
+    trigger:
+      - platform: time
+        at: "08:00:00"
+    action:
+      - service: rest_command.voltassistant_report
+      - service: notify.mobile_app_phone
+        data:
+          title: "⚡ VoltAssistant Report"
+          message: "{{ states.sensor.voltassistant_report.state }}"
+
+rest_command:
+  voltassistant_report:
+    url: "http://YOUR_ADDON_IP:8099/api/report/daily"
+    method: GET
+```
+
+### Night Mode Before Bed
+
+```yaml
+automation:
+  - alias: "VoltAssistant Night Mode"
+    trigger:
+      - platform: time
+        at: "23:00:00"
+    action:
+      - service: rest_command.voltassistant_action
+        data:
+          action: night_mode
+
+rest_command:
+  voltassistant_action:
+    url: "http://YOUR_ADDON_IP:8099/api/quick-action"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "{{ action }}"}'
+```
+
+### Low Battery Alert
+
+```yaml
+automation:
+  - alias: "VoltAssistant Low Battery Alert"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.voltassistant_battery_soc
+        below: 20
+    condition:
+      - condition: time
+        after: "18:00:00"
+        before: "08:00:00"
+    action:
+      - service: notify.mobile_app_phone
+        data:
+          title: "⚠️ Low Battery"
+          message: "Battery at {{ states('sensor.voltassistant_battery_soc') }}% - consider charging"
+```
+
+### Prometheus/Grafana Integration
+
+Add to your Prometheus config:
+
+```yaml
+scrape_configs:
+  - job_name: 'voltassistant'
+    static_configs:
+      - targets: ['YOUR_ADDON_IP:8099']
+    metrics_path: '/metrics'
+```
+
 ## Troubleshooting
 
 ### Add-on won't start

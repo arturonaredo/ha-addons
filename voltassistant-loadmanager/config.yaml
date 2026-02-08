@@ -1,6 +1,6 @@
 name: "VoltAssistant"
 description: "Smart battery and load management for Deye/Solarman inverters. PVPC price optimization, tariff periods, and priority-based load shedding."
-version: "1.3.0"
+version: "1.4.0"
 slug: "voltassistant"
 url: "https://github.com/arturonaredo/ha-addons"
 arch:

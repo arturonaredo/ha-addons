@@ -2,6 +2,38 @@
 
 All notable changes to VoltAssistant will be documented in this file.
 
+## [1.4.0] - 2026-02-08
+
+### Added
+
+#### Dashboard
+- **Summary Card**: "What's happening now" prominent display
+- **Energy Flow Diagram**: Visual solar → load → grid flow
+- **Battery Power Indicator**: Charge/discharge status
+- **Next Cheap Hour**: Shows when next cheap period starts
+- **Live Connection Status**: Green/red dot in header
+- **Tooltips**: Hover info on battery display
+
+#### Configuration
+- **Export/Import**: Save and restore configuration
+- **Reset to Defaults**: One-click configuration reset
+- **Test Sensors Button**: Verify all entities work
+- **Controls Section**: Configure inverter control entities
+
+#### API Enhancements
+- `/api/set/target/{soc}`: Simple URL-based target setting
+- `/api/set/action/{action}`: URL-based action execution
+- `/api/schedule`: Schedule future actions
+- `/api/demo`: Demo data for UI testing
+- `/api/ha-config`: Generate HA configuration YAML
+
+#### UI/UX
+- **Keyboard Shortcuts**: 1-7 tabs, R refresh, Ctrl+A auto
+- **Demo Mode Toggle**: Test UI without HA connection
+- **Hourly Price Table**: 12-hour price preview
+- **Last Update Timestamp**: Shows data freshness
+- **Error Handling**: Visual feedback on connection issues
+
 ## [1.3.0] - 2026-02-08
 
 ### Added

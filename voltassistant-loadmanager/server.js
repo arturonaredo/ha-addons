@@ -1,5 +1,5 @@
 /**
- * Volt Load Manager - Home Assistant Addon
+ * VoltAssistant - Home Assistant Addon
  * Battery optimization + load management for Deye inverters
  */
 
@@ -408,7 +408,7 @@ async function balanceLoads() {
 const html = `<!DOCTYPE html>
 <html>
 <head>
-  <title>Volt Load Manager</title>
+  <title>VoltAssistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -529,7 +529,7 @@ const html = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>⚡ Volt Load Manager</h1>
+  <h1>⚡ VoltAssistant</h1>
   
   <div class="tabs">
     <button class="tab active" onclick="showPanel('status')">Status</button>
@@ -1318,6 +1318,6 @@ setTimeout(() => {
 }, 5000);
 
 server.listen(8099, () => {
-  log('success', 'Volt Load Manager started on :8099');
-  console.log('⚡ Volt Load Manager on :8099');
+  log('success', 'VoltAssistant started on :8099');
+  console.log('⚡ VoltAssistant on :8099');
 });

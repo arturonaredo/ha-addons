@@ -1,4 +1,4 @@
-# Volt Load Manager
+# VoltAssistant
 
 Smart battery and load management for Deye/Solarman inverters with PVPC tariffs.
 
@@ -104,7 +104,7 @@ loads:
 
 ## Control Panel
 
-The addon adds **"Volt Load Manager"** to the Home Assistant sidebar.
+The addon adds **"VoltAssistant"** to the Home Assistant sidebar.
 
 ### Panel Features:
 

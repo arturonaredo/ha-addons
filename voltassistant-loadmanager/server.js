@@ -90,6 +90,14 @@ try {
 // Scheduled actions tracking
 const scheduledActions = [];
 
+// Battery optimization presets
+const PRESETS = {
+  'eco': { name: 'Eco Mode', target: 50, description: 'Minimal charging, maximize self-consumption' },
+  'balanced': { name: 'Balanced', target: 80, description: 'Default balance of grid/solar' },
+  'full': { name: 'Full Charge', target: 100, description: 'Always keep battery full' },
+  'export': { name: 'Export Priority', target: 30, description: 'Maximize grid export, low battery' }
+};
+
 // Merge configs: user config overrides HA options
 function getConfig() {
   return {
@@ -2587,6 +2595,33 @@ const server = http.createServer(async (req, res) => {
       } else {
         res.statusCode = 400;
         res.end(JSON.stringify({ success: false, error: 'Usage: /api/set/target/{10-100} or /api/set/action/{action}' }));
+      }
+    
+    } else if (path === '/api/presets') {
+      res.end(JSON.stringify({ success: true, presets: PRESETS }));
+    
+    } else if (path.startsWith('/api/preset/') && req.method === 'POST') {
+      const presetId = path.split('/')[3];
+      const preset = PRESETS[presetId];
+      
+      if (!preset) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ success: false, error: 'Unknown preset' }));
+      } else {
+        state.manualTargetSoc = preset.target;
+        state.manualTargetExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        saveState();
+        
+        const c = ctrl();
+        if (c.program_1_soc) await setNumber(c.program_1_soc, preset.target);
+        
+        log('success', 'Preset applied: ' + preset.name);
+        res.end(JSON.stringify({ 
+          success: true, 
+          preset: presetId,
+          name: preset.name,
+          target: preset.target
+        }));
       }
     
     } else if (path === '/api/schedule' && req.method === 'GET') {

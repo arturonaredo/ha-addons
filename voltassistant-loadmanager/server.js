@@ -697,12 +697,16 @@ const html = `<!DOCTYPE html>
     
     <div class="card wide">
       <h2>⚡ Quick Actions</h2>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;">
-        <button class="btn" onclick="quickAction('charge_100')">🔋 Charge to 100%</button>
-        <button class="btn" onclick="quickAction('charge_80')">🔋 Charge to 80%</button>
-        <button class="btn secondary" onclick="quickAction('stop_charge')">⏹️ Stop Charging</button>
-        <button class="btn secondary" onclick="quickAction('discharge')">⚡ Discharge Mode</button>
-        <button class="btn secondary" onclick="quickAction('auto')">🤖 Auto Mode</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btn" onclick="quickAction('charge_100')">🔋 100%</button>
+        <button class="btn" onclick="quickAction('charge_80')">🔋 80%</button>
+        <button class="btn" onclick="quickAction('charge_50')">🔋 50%</button>
+        <button class="btn secondary" onclick="quickAction('stop_charge')">⏹️ Stop</button>
+        <button class="btn secondary" onclick="quickAction('discharge')">⚡ Discharge</button>
+        <button class="btn secondary" onclick="quickAction('hold')">⏸️ Hold</button>
+        <button class="btn secondary" onclick="quickAction('night_mode')">🌙 Night</button>
+        <button class="btn secondary" onclick="quickAction('force_export')">📤 Export</button>
+        <button class="btn" onclick="quickAction('auto')" style="background:#58a6ff;">🤖 Auto</button>
       </div>
       <div id="quick-action-result" class="sub" style="margin-top:12px;"></div>
     </div>
@@ -2190,6 +2194,44 @@ const server = http.createServer(async (req, res) => {
               saveState();
               await applyCharging();
               message = 'Auto mode enabled';
+              log('success', message);
+              break;
+            
+            case 'charge_50':
+              state.manualTargetSoc = 50;
+              state.manualTargetExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              saveState();
+              if (c.program_1_soc) await setNumber(c.program_1_soc, 50);
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 50);
+              message = 'Charging to 50% (2h override)';
+              log('success', message);
+              break;
+            
+            case 'night_mode':
+              // Keep battery at 80% minimum for overnight use
+              state.manualTargetSoc = 80;
+              state.manualTargetExpiry = new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(); // Until morning
+              saveState();
+              if (c.program_1_soc) await setNumber(c.program_1_soc, 80);
+              message = 'Night mode: maintaining 80% SOC for 10h';
+              log('success', message);
+              break;
+            
+            case 'force_export':
+              // Discharge to grid during high price
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 0);
+              if (c.program_1_soc) await setNumber(c.program_1_soc, batOpt().min_soc || 10);
+              message = 'Force export mode - discharging to minimum';
+              log('success', message);
+              break;
+            
+            case 'hold':
+              // Hold current SOC
+              state.manualTargetSoc = state.battery.soc;
+              state.manualTargetExpiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+              saveState();
+              if (c.grid_charge_start_soc) await setNumber(c.grid_charge_start_soc, 0);
+              message = 'Hold mode - maintaining ' + state.battery.soc + '% for 4h';
               log('success', message);
               break;
               
